@@ -2,15 +2,16 @@
 
 <div align="center">
 
+![Version](https://img.shields.io/badge/version-2.0.0-blue?style=for-the-badge)
 ![Bash](https://img.shields.io/badge/bash-5.0+-4EAA25?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Caddy](https://img.shields.io/badge/Caddy-2.x-00ADD8?style=for-the-badge&logo=caddy&logoColor=white)
 ![Ubuntu](https://img.shields.io/badge/Ubuntu-20.04%2B-E95420?style=for-the-badge&logo=ubuntu&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)
 
-Bash-скрипт для быстрой установки и управления [NaiveProxy](https://github.com/klzgrad/naiveproxy) на Linux VPS.  
+Bash-скрипт для установки и управления [NaiveProxy](https://github.com/klzgrad/naiveproxy) на Linux VPS.  
 Стек: **Caddy 2** + **klzgrad/forwardproxy@naive**
 
-[Установка](#-установка) • [Использование](#-использование) • [Клиентский конфиг](#-клиентский-конфиг) • [FAQ](#-faq)
+[Установка](#-быстрая-установка) • [Возможности](#-возможности) • [Использование](#-использование) • [Telegram](#-telegram-бот) • [FAQ](#-faq)
 
 </div>
 
@@ -18,15 +19,20 @@ Bash-скрипт для быстрой установки и управлени
 
 ## ✨ Возможности
 
-- 🔧 **Полное меню управления** — установка, статус, смена пароля, обновление, удаление
-- 🔍 **Проверка домена** — скрипт убедится, что DNS указывает на сервер до получения TLS
-- 🔒 **probe_resistance** — сервер выглядит как обычный сайт для сканеров и цензоров
-- 🌐 **HTTP/3 (QUIC)** — открывает 443/udp автоматически
-- 🚀 **TCP BBR** — опциональное включение для ускорения
-- 🛡️ **UFW** — автоматически открывает нужные порты
-- 📦 **Автосборка Caddy** — xcaddy + forwardproxy собирается с нуля
-- 💾 **Бэкап конфига** — перед каждым изменением
-- 📋 **Клиентский конфиг** — URI, JSON для naive-client и sing-box
+| Фича | Описание |
+|------|----------|
+| 🎛️ Меню управления | Установка, статус, обновление, удаление через интерактивное меню |
+| 👥 Мультипользователь | Добавление/удаление пользователей без перезапуска |
+| 🤖 Telegram-бот | Алерты при падении/подъёме + статистика по команде |
+| 🔍 Проверка DNS | Скрипт убедится, что домен указывает на сервер перед установкой |
+| 🔒 probe_resistance | Сервер выглядит как обычный сайт для сканеров и цензоров |
+| 👁️ Watchdog | Cron каждые 5 минут — автоперезапуск + алерт в Telegram |
+| 🔄 Автообновление | Caddy обновляется автоматически каждое воскресенье в 3:00 |
+| 📊 Мониторинг | Трафик, RAM, диск, uptime прямо в терминале или в Telegram |
+| 🌐 HTTP/3 (QUIC) | Открывает 443/udp автоматически через UFW |
+| 🚀 TCP BBR | Опциональное включение для ускорения |
+| 💾 Бэкап конфига | Перед каждым изменением автоматически |
+| 📋 Клиентский конфиг | URI, JSON для naive-client и sing-box |
 
 ---
 
@@ -36,24 +42,24 @@ Bash-скрипт для быстрой установки и управлени
 |----------|----------|
 | ОС | Ubuntu 20.04 / 22.04 / 24.04 |
 | Права | root |
-| Домен | Указывает A-записью на IP сервера |
+| Домен | A-запись → IP сервера |
 | Порты | 80, 443 (tcp + udp) |
-| RAM | от 512 MB (сборка Go требует ~300 MB) |
+| RAM | от 512 MB (сборка Go ~300 MB) |
 
 ---
 
-## ⚡ Установка
+## ⚡ Быстрая установка
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/ivanstudiya-cpu/naiveproxy/main/naiveproxy.sh)
+```
+
+Или вручную:
 
 ```bash
 wget -O naiveproxy.sh https://raw.githubusercontent.com/ivanstudiya-cpu/naiveproxy/main/naiveproxy.sh
 chmod +x naiveproxy.sh
 sudo bash naiveproxy.sh
-```
-
-Или одной командой:
-
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/ivanstudiya-cpu/naiveproxy/main/naiveproxy.sh)
 ```
 
 ---
@@ -68,38 +74,125 @@ sudo bash naiveproxy.sh
 
 ```
 ──────────────────────────────────────────
-   NaiveProxy Manager
-   Caddy + forwardproxy (klzgrad/naive)
+   NaiveProxy Manager v2.0.0
+   Статус: ● работает  |  Домен: proxy.example.com
+   Telegram: подключён  |  Юзеров: 3
 ──────────────────────────────────────────
-   1) Установить NaiveProxy
-   2) Статус
-   3) Показать клиентский конфиг
-   4) Сменить пароль
-   5) Перезапустить Caddy
-   6) Обновить Caddy
-   7) Просмотр логов
-   8) Удалить NaiveProxy
-   0) Выход
+   1)  Установить NaiveProxy
+   2)  Статус
+   3)  Клиентский конфиг
+   4)  Управление пользователями
+   5)  Мониторинг и статистика
+   6)  Настройка Telegram
+   7)  Перезапустить Caddy
+   8)  Обновить Caddy
+   9)  Логи
+   10) Удалить NaiveProxy
+   0)  Выход
 ──────────────────────────────────────────
 ```
 
 ### Аргументы командной строки
 
 ```bash
-sudo bash naiveproxy.sh install   # Установить
-sudo bash naiveproxy.sh status    # Статус
-sudo bash naiveproxy.sh config    # Показать конфиг
-sudo bash naiveproxy.sh restart   # Перезапустить
-sudo bash naiveproxy.sh update    # Обновить Caddy
-sudo bash naiveproxy.sh logs      # Логи
-sudo bash naiveproxy.sh remove    # Удалить
+sudo bash naiveproxy.sh install    # Установить
+sudo bash naiveproxy.sh status     # Статус
+sudo bash naiveproxy.sh config     # Показать конфиг
+sudo bash naiveproxy.sh users      # Управление пользователями
+sudo bash naiveproxy.sh monitor    # Мониторинг
+sudo bash naiveproxy.sh restart    # Перезапустить
+sudo bash naiveproxy.sh update     # Обновить Caddy
+sudo bash naiveproxy.sh logs       # Логи
+sudo bash naiveproxy.sh tg-stats   # Отправить статистику в Telegram
+sudo bash naiveproxy.sh remove     # Удалить
 ```
 
 ---
 
-## 📱 Клиентский конфиг
+## 👥 Мультипользователь
 
-После установки скрипт выводит три формата:
+Меню → **4) Управление пользователями**:
+
+- Просмотр всех пользователей с паролями
+- Добавление нового пользователя (Caddy перезагружается без разрыва соединений)
+- Удаление пользователя
+- Смена пароля
+
+При добавлении/удалении пользователя автоматически приходит уведомление в Telegram.
+
+---
+
+## 🤖 Telegram-бот
+
+### Настройка
+
+1. Создай бота через [@BotFather](https://t.me/BotFather) → `/newbot` → получи токен
+2. Узнай свой chat_id через [@userinfobot](https://t.me/userinfobot)
+3. Запусти скрипт → меню → **6) Настройка Telegram**
+
+### Что присылает бот
+
+| Событие | Уведомление |
+|---------|-------------|
+| Установка | ✅ NaiveProxy запущен |
+| Падение | 🔴 Упал + попытка автоперезапуска |
+| Перезапуск | ✅ Успешно перезапущен |
+| Обновление Caddy | 🔄 Старая → новая версия |
+| Новый пользователь | 👤 Добавлен логин |
+| Удаление пользователя | 🗑 Удалён логин |
+| Статистика по запросу | 📊 Полный отчёт |
+
+### Пример статистики в Telegram
+
+```
+📊 Статистика NaiveProxy
+
+🌐 Домен: proxy.example.com
+📡 Статус: 🟢 Работает
+🕐 Запущен: 2025-04-15 03:00
+📦 Caddy: v2.8.4
+👥 Пользователей: 3
+
+📈 Трафик (с ребута):
+⬇️ Входящий: 24.5G
+⬆️ Исходящий: 8.2G
+
+🖥 Сервер: vps-moscow
+💾 RAM: 312M/1.0G
+💿 Диск: 8.4G/25G (34%)
+```
+
+Вручную отправить статистику:
+
+```bash
+sudo bash naiveproxy.sh tg-stats
+```
+
+---
+
+## 📊 Мониторинг
+
+Меню → **5) Мониторинг и статистика** — показывает:
+
+- Статус Caddy и время запуска
+- Версию Caddy
+- Количество пользователей
+- Трафик входящий/исходящий (по сетевому интерфейсу)
+- RAM, диск, uptime сервера
+- Проверку доступности домена снаружи
+
+### Watchdog (автоматический)
+
+Каждые 5 минут cron проверяет статус Caddy. Если упал:
+1. Шлёт алерт в Telegram
+2. Пытается перезапустить
+3. Сообщает результат
+
+Каждое воскресенье в 3:00 — автообновление Caddy до последней версии.
+
+---
+
+## 📱 Клиентский конфиг
 
 ### URI (универсальный)
 ```
@@ -136,22 +229,25 @@ naive+https://user:password@your.domain.com:443
 |--------|-----------|--------|
 | NekoBox | Android | [GitHub](https://github.com/MatsuriDayo/NekoBoxForAndroid) |
 | sing-box | iOS / Android / Desktop | [GitHub](https://github.com/SagerNet/sing-box) |
-| v2rayN | Windows | [GitHub](https://github.com/2dust/v2rayN) |
-| naive | Linux CLI | [GitHub](https://github.com/klzgrad/naiveproxy/releases) |
 | Hiddify | Android / Desktop | [GitHub](https://github.com/hiddify/hiddify-next) |
+| v2rayN | Windows | [GitHub](https://github.com/2dust/v2rayN) |
+| naive | Linux CLI | [Releases](https://github.com/klzgrad/naiveproxy/releases) |
 
 ---
 
 ## 🔧 Как работает NaiveProxy
 
 ```
-[Клиент] → [naive-client] → HTTPS/2 CONNECT → [Caddy + forwardproxy] → [Интернет]
-              Chromium network stack         probe_resistance + TLS
+[Клиент]        [Cenzor]        [Сервер]           [Internet]
+   │                │                │                   │
+   ├── naive ──────►│── HTTPS/2 ────►│── Caddy ─────────►│
+   │   Chromium     │   выглядит     │   forwardproxy     │
+   │   network      │   как Chrome   │   probe_resistance │
+   │   stack        │                │                    │
 ```
 
-NaiveProxy использует сетевой стек Chromium для маскировки трафика под обычный HTTPS браузера:
-- **HTTP/2 CONNECT tunneling** — трафик выглядит как браузерный
-- **TLS fingerprint** = Chrome — не детектируется по отпечатку
+- **HTTP/2 CONNECT tunneling** — трафик неотличим от браузерного
+- **TLS fingerprint = Chrome** — не детектируется по отпечатку
 - **probe_resistance** — на probe-запросы отвечает как обычный сайт
 - **Padding protocol** — противодействие анализу длины пакетов
 
@@ -160,13 +256,15 @@ NaiveProxy использует сетевой стек Chromium для маск
 ## 📁 Файлы на сервере
 
 ```
-/usr/local/bin/caddy          — бинарник Caddy
-/etc/caddy/Caddyfile          — конфиг Caddy
-/etc/naiveproxy/naive.conf    — параметры (домен, логин, пароль)
-/etc/naiveproxy/backups/      — бэкапы Caddyfile
-/var/www/html/index.html      — заглушка-сайт
-/var/log/caddy/               — логи
-/etc/systemd/system/caddy.service
+/usr/local/bin/caddy              — бинарник Caddy
+/etc/caddy/Caddyfile              — конфиг Caddy
+/etc/naiveproxy/naive.conf        — параметры (домен, email, TG)
+/etc/naiveproxy/users.conf        — список пользователей
+/etc/naiveproxy/backups/          — бэкапы Caddyfile
+/etc/naiveproxy/monitor.sh        — watchdog скрипт
+/var/www/html/index.html          — заглушка-сайт
+/var/log/caddy/                   — логи
+/etc/systemd/system/caddy.service — systemd unit
 ```
 
 ---
@@ -174,18 +272,21 @@ NaiveProxy использует сетевой стек Chromium для маск
 ## ❓ FAQ
 
 **Сборка занимает слишком долго**  
-Это нормально — xcaddy компилирует Go-код. На слабом VPS (1 vCPU) может занять до 10 минут.
+Нормально — xcaddy компилирует Go-код. На 1 vCPU до 10 минут.
 
-**Caddy не запускается после установки**  
-Проверь логи: `journalctl -u caddy -n 50`. Чаще всего проблема — домен не указывает на сервер или порт 80 занят.
+**Caddy не запускается**  
+Смотри лог: `journalctl -u caddy -n 50`. Чаще всего — домен не указывает на сервер или занят порт 80.
 
-**Можно ли использовать без домена?**  
-Нет. NaiveProxy требует валидный TLS-сертификат, а Caddy получает его через Let's Encrypt по домену.
-
-**Как проверить что всё работает?**  
+**Как проверить что всё работает?**
 ```bash
 curl -v --proxy "https://user:pass@your.domain.com:443" https://ifconfig.me
 ```
+
+**Можно ли без домена?**  
+Нет. Нужен валидный TLS от Let's Encrypt.
+
+**Где хранятся пароли?**  
+В `/etc/naiveproxy/users.conf` с правами 600 (только root).
 
 ---
 
