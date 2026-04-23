@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-#   NaiveProxy Manager v2.1.0 — by ivanstudiya-cpu
+#   NaiveProxy Manager v3.0.0 — by ivanstudiya-cpu
 #   Стек: Caddy 2 + klzgrad/forwardproxy@naive
 #   ОС: Ubuntu 20.04 / 22.04 / 24.04
 #   GitHub: https://github.com/ivanstudiya-cpu/naiveproxy
@@ -8,7 +8,7 @@
 
 set -euo pipefail
 
-VERSION="2.1.0"
+VERSION="3.0.0"
 
 # ─── Цвета ───────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -36,6 +36,337 @@ USERS_FILE="/etc/naiveproxy/users.conf"
 LOG_DIR="/var/log/caddy"
 BACKUP_DIR="/etc/naiveproxy/backups"
 MONITOR_SCRIPT="/etc/naiveproxy/monitor.sh"
+SSH_HARDENING_DONE="/etc/naiveproxy/.ssh_hardened"
+SYSUPDATE_DONE="/etc/naiveproxy/.sysupdate_done"
+
+
+# ══════════════════════════════════════════════════════════════
+#   БЛОК 1: ОБНОВЛЕНИЕ СИСТЕМЫ
+# ══════════════════════════════════════════════════════════════
+
+cmd_sysupdate() {
+    hr
+    echo -e "${BOLD}  Обновление системы${RESET}"
+    hr
+
+    info "Обновляю списки пакетов..."
+    apt-get update -q
+
+    info "Устанавливаю обновления пакетов..."
+    DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -q         -o Dpkg::Options::="--force-confdef"         -o Dpkg::Options::="--force-confold"
+
+    info "Чищу ненужные пакеты..."
+    apt-get autoremove -y -q
+    apt-get autoclean -q
+
+    # Ставим и настраиваем автообновления безопасности
+    info "Настраиваю автоматические обновления безопасности..."
+    apt-get install -y -q unattended-upgrades apt-listchanges
+
+    cat > /etc/apt/apt.conf.d/50unattended-upgrades << 'EOF'
+Unattended-Upgrade::Allowed-Origins {
+    "${distro_id}:${distro_codename}";
+    "${distro_id}:${distro_codename}-security";
+    "${distro_id}ESMApps:${distro_codename}-apps-security";
+    "${distro_id}ESM:${distro_codename}-infra-security";
+};
+Unattended-Upgrade::Package-Blacklist {};
+Unattended-Upgrade::DevRelease "false";
+Unattended-Upgrade::AutoFixInterruptedDpkg "true";
+Unattended-Upgrade::MinimalSteps "true";
+Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+Unattended-Upgrade::Remove-New-Unused-Dependencies "true";
+Unattended-Upgrade::Remove-Unused-Dependencies "true";
+Unattended-Upgrade::Automatic-Reboot "false";
+Unattended-Upgrade::Automatic-Reboot-Time "03:30";
+EOF
+
+    cat > /etc/apt/apt.conf.d/20auto-upgrades << 'EOF'
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Download-Upgradeable-Packages "1";
+APT::Periodic::AutocleanInterval "7";
+APT::Periodic::Unattended-Upgrade "1";
+EOF
+
+    systemctl enable unattended-upgrades --quiet 2>/dev/null || true
+    systemctl restart unattended-upgrades 2>/dev/null || true
+
+    # Проверяем нужен ли ребут
+    if [[ -f /var/run/reboot-required ]]; then
+        warn "Требуется перезагрузка сервера для применения обновлений ядра!"
+        echo -ne "${YELLOW}Перезагрузить сейчас? [y/N]: ${RESET}"
+        read -r ans
+        if [[ "${ans,,}" == "y" ]]; then
+            ok "Перезагружаю через 5 секунд..."
+            sleep 5
+            reboot
+        else
+            warn "Не забудь перезагрузить сервер позже: reboot"
+        fi
+    fi
+
+    # Маркер что обновление выполнено
+    mkdir -p "$CONFIG_DIR"
+    date '+%Y-%m-%d %H:%M:%S' > "$SYSUPDATE_DONE"
+
+    ok "Система обновлена"
+    ok "Автообновления безопасности: включены (ежедневно)"
+    tg_send "🔄 <b>Система обновлена</b>
+🖥 Сервер: <code>$(hostname)</code>
+🕐 $(date '+%Y-%m-%d %H:%M:%S')
+🛡 Автообновления безопасности: включены"
+}
+
+# ══════════════════════════════════════════════════════════════
+#   БЛОК 2: SSH HARDENING
+# ══════════════════════════════════════════════════════════════
+
+cmd_ssh_hardening() {
+    hr
+    echo -e "${BOLD}  SSH Hardening${RESET}"
+    hr
+
+    local sshd_config="/etc/ssh/sshd_config"
+    local current_port
+    current_port=$(grep -E "^Port " "$sshd_config" 2>/dev/null | awk '{print $2}' || echo "22")
+
+    echo -e "  Текущий SSH порт: ${CYAN}${current_port}${RESET}"
+    echo
+
+    # ── Шаг 1: Создание нового пользователя ──────────────────
+    hr
+    echo -e "${BOLD}  Шаг 1: Новый sudo-пользователь${RESET}"
+    hr
+
+    local new_user=""
+    while true; do
+        echo -ne "${CYAN}Имя нового пользователя (Enter = пропустить): ${RESET}"
+        read -r new_user
+        if [[ -z "$new_user" ]]; then
+            warn "Пропускаю создание пользователя"
+            break
+        fi
+        if [[ ! "$new_user" =~ ^[a-z][a-z0-9_-]{2,31}$ ]]; then
+            err "Только строчные буквы, цифры, _, - (3-32 символа, начинается с буквы)"
+            continue
+        fi
+        if id "$new_user" &>/dev/null; then
+            warn "Пользователь $new_user уже существует"
+            break
+        fi
+
+        # Создаём пользователя
+        useradd -m -s /bin/bash "$new_user"
+        usermod -aG sudo "$new_user"
+
+        # Пароль
+        echo -ne "${CYAN}Пароль для $new_user (Enter = сгенерировать): ${RESET}"
+        read -r user_pass
+        if [[ -z "$user_pass" ]]; then
+            user_pass=$(openssl rand -base64 16 | tr -dc 'a-zA-Z0-9' | head -c 20)
+            info "Сгенерирован пароль: ${BOLD}${user_pass}${RESET}"
+            info "СОХРАНИ ЕГО СЕЙЧАС!"
+        fi
+        echo "${new_user}:${user_pass}" | chpasswd
+        ok "Пользователь ${new_user} создан с правами sudo"
+        break
+    done
+
+    # ── Шаг 2: SSH-ключ ──────────────────────────────────────
+    hr
+    echo -e "${BOLD}  Шаг 2: SSH-ключ (ED25519)${RESET}"
+    hr
+
+    local target_user="${new_user:-root}"
+    local target_home
+    target_home=$(getent passwd "$target_user" | cut -d: -f6)
+    local ssh_dir="${target_home}/.ssh"
+    local auth_keys="${ssh_dir}/authorized_keys"
+
+    if [[ -f "$auth_keys" ]] && grep -q "ssh-" "$auth_keys" 2>/dev/null; then
+        ok "SSH-ключ уже настроен для ${target_user}"
+    else
+        info "Генерирую ED25519 ключ для ${target_user}..."
+        mkdir -p "$ssh_dir"
+        chmod 700 "$ssh_dir"
+
+        # Генерируем ключ
+        ssh-keygen -t ed25519 -f "${ssh_dir}/id_ed25519_server" -N "" -C "naiveproxy-server-$(date +%Y%m%d)" -q
+        cat "${ssh_dir}/id_ed25519_server.pub" >> "$auth_keys"
+        chmod 600 "$auth_keys"
+        [[ "$target_user" != "root" ]] && chown -R "${target_user}:${target_user}" "$ssh_dir"
+
+        echo
+        echo -e "${RED}╔══════════════════════════════════════════════════════╗${RESET}"
+        echo -e "${RED}║  ПРИВАТНЫЙ КЛЮЧ — СКОПИРУЙ И СОХРАНИ ПРЯМО СЕЙЧАС  ║${RESET}"
+        echo -e "${RED}╚══════════════════════════════════════════════════════╝${RESET}"
+        cat "${ssh_dir}/id_ed25519_server"
+        echo -e "${RED}══════════════════════════════════════════════════════${RESET}"
+        echo
+        warn "Сохрани этот ключ в файл: id_naiveproxy (на своём компе)"
+        warn "Подключение: ssh -i id_naiveproxy -p [НОВЫЙ_ПОРТ] ${target_user}@$(curl -s4 --max-time 5 https://ifconfig.me 2>/dev/null || echo YOUR_IP)"
+        echo
+        echo -ne "${YELLOW}Ты сохранил ключ? [yes]: ${RESET}"
+        read -r confirm
+        if [[ "${confirm,,}" != "yes" && "${confirm,,}" != "y" ]]; then
+            warn "Пожалуйста сохрани ключ перед продолжением!"
+            echo -ne "${YELLOW}Продолжить всё равно? [y/N]: ${RESET}"
+            read -r force
+            [[ "${force,,}" == "y" ]] || return 1
+        fi
+        ok "SSH-ключ сгенерирован и добавлен в authorized_keys"
+    fi
+
+    # ── Шаг 3: Смена SSH порта ────────────────────────────────
+    hr
+    echo -e "${BOLD}  Шаг 3: Смена SSH порта${RESET}"
+    hr
+
+    local new_ssh_port=""
+    echo -e "  Текущий порт: ${CYAN}${current_port}${RESET}"
+    echo -e "  ${BOLD}1)${RESET} Ввести вручную"
+    echo -e "  ${BOLD}2)${RESET} Случайный (49000-65000)"
+    echo -e "  ${BOLD}0)${RESET} Оставить ${current_port}"
+    echo -ne "${CYAN}Выбор: ${RESET}"
+    read -r port_choice
+
+    case "$port_choice" in
+        1)
+            while true; do
+                echo -ne "${CYAN}Новый SSH порт (1024-65535): ${RESET}"
+                read -r new_ssh_port
+                if [[ "$new_ssh_port" =~ ^[0-9]+$ ]] &&                    [[ "$new_ssh_port" -ge 1024 ]] &&                    [[ "$new_ssh_port" -le 65535 ]]; then
+                    break
+                fi
+                err "Неверный порт. Введи число от 1024 до 65535"
+            done
+            ;;
+        2)
+            new_ssh_port=$(( RANDOM % 16000 + 49000 ))
+            info "Случайный порт: ${BOLD}${new_ssh_port}${RESET}"
+            ;;
+        *)
+            new_ssh_port="$current_port"
+            info "Порт оставляем: $current_port"
+            ;;
+    esac
+
+    # ── Шаг 4: Применяем sshd_config ─────────────────────────
+    hr
+    echo -e "${BOLD}  Шаг 4: Настройка sshd_config${RESET}"
+    hr
+
+    # Бэкап
+    cp "$sshd_config" "${sshd_config}.bak.$(date +%Y%m%d_%H%M%S)"
+    ok "Бэкап sshd_config создан"
+
+    # Применяем настройки
+    local disable_root="yes"
+    local disable_pass="yes"
+
+    # Если нет ключа для нового пользователя — не отключаем пароль
+    if [[ ! -f "$auth_keys" ]] || ! grep -q "ssh-" "$auth_keys" 2>/dev/null; then
+        warn "Нет SSH-ключа — пароль оставляем включённым"
+        disable_pass="no"
+    fi
+
+    # Меняем настройки
+    sed -i "s/^#*Port .*/Port ${new_ssh_port}/" "$sshd_config"
+    sed -i "s/^#*PermitRootLogin .*/PermitRootLogin ${disable_root}/" "$sshd_config"
+    sed -i "s/^#*PasswordAuthentication .*/PasswordAuthentication ${disable_pass}/" "$sshd_config"
+    sed -i "s/^#*PubkeyAuthentication .*/PubkeyAuthentication yes/" "$sshd_config"
+    sed -i "s/^#*AuthorizedKeysFile .*/AuthorizedKeysFile .ssh\/authorized_keys/" "$sshd_config"
+    sed -i "s/^#*X11Forwarding .*/X11Forwarding no/" "$sshd_config"
+    sed -i "s/^#*MaxAuthTries .*/MaxAuthTries 3/" "$sshd_config"
+    sed -i "s/^#*LoginGraceTime .*/LoginGraceTime 30/" "$sshd_config"
+    sed -i "s/^#*PermitEmptyPasswords .*/PermitEmptyPasswords no/" "$sshd_config"
+
+    # Добавляем если нет
+    grep -q "^ClientAliveInterval" "$sshd_config" || echo "ClientAliveInterval 300" >> "$sshd_config"
+    grep -q "^ClientAliveCountMax" "$sshd_config" || echo "ClientAliveCountMax 2"  >> "$sshd_config"
+
+    # Проверяем конфиг
+    if ! sshd -t 2>/dev/null; then
+        err "Ошибка в sshd_config! Откатываю..."
+        cp "${sshd_config}.bak.$(date +%Y%m%d_%H%M%S)" "$sshd_config" 2>/dev/null || true
+        return 1
+    fi
+
+    # ── Шаг 5: UFW + Fail2Ban ─────────────────────────────────
+    hr
+    echo -e "${BOLD}  Шаг 5: Firewall + Fail2Ban${RESET}"
+    hr
+
+    # Открываем новый порт ПЕРЕД закрытием старого
+    ufw allow "${new_ssh_port}/tcp" comment "SSH hardened" >/dev/null 2>&1 || true
+
+    # Закрываем старый порт только если он изменился
+    if [[ "$new_ssh_port" != "$current_port" ]]; then
+        ufw delete allow "${current_port}/tcp" >/dev/null 2>&1 || true
+        ufw delete allow ssh >/dev/null 2>&1 || true
+        ok "Старый SSH порт ${current_port} закрыт в UFW"
+    fi
+
+    ok "Новый SSH порт ${new_ssh_port} открыт в UFW"
+
+    # Fail2Ban
+    apt-get install -y -q fail2ban
+
+    cat > /etc/fail2ban/jail.local << EOF
+[DEFAULT]
+bantime  = 3600
+findtime = 600
+maxretry = 3
+backend  = systemd
+
+[sshd]
+enabled  = true
+port     = ${new_ssh_port}
+logpath  = %(sshd_log)s
+maxretry = 3
+bantime  = 86400
+EOF
+
+    systemctl enable fail2ban --quiet
+    systemctl restart fail2ban
+    ok "Fail2Ban настроен (3 попытки → бан на 24 часа)"
+
+    # ── Перезапуск sshd ───────────────────────────────────────
+    systemctl restart sshd
+    ok "sshd перезапущен с новыми настройками"
+
+    # Маркер
+    mkdir -p "$CONFIG_DIR"
+    cat > "$SSH_HARDENING_DONE" << EOF
+SSH_PORT=${new_ssh_port}
+SSH_USER=${target_user}
+HARDENED_AT=$(date '+%Y-%m-%d %H:%M:%S')
+EOF
+
+    # ── Итог ─────────────────────────────────────────────────
+    local server_ip
+    server_ip=$(curl -s4 --max-time 5 https://ifconfig.me 2>/dev/null         || curl -s4 --max-time 5 https://api.ipify.org 2>/dev/null || echo "YOUR_IP")
+
+    hr
+    echo -e "${BOLD}${GREEN}  SSH Hardening завершён!${RESET}"
+    hr
+    echo -e "  ${BOLD}Новый SSH порт:${RESET}  ${CYAN}${new_ssh_port}${RESET}"
+    echo -e "  ${BOLD}Пользователь:${RESET}   ${CYAN}${target_user}${RESET}"
+    echo -e "  ${BOLD}Root вход:${RESET}      ${RED}запрещён${RESET}"
+    echo -e "  ${BOLD}Пароль вход:${RESET}    $([ "$disable_pass" = "yes" ] && echo -e "${RED}запрещён${RESET}" || echo -e "${YELLOW}разрешён${RESET}")"
+    echo -e "  ${BOLD}Fail2Ban:${RESET}       ${GREEN}активен${RESET}"
+    echo
+    echo -e "  ${BOLD}Подключение:${RESET}"
+    echo -e "  ${CYAN}ssh -i ~/.ssh/id_naiveproxy -p ${new_ssh_port} ${target_user}@${server_ip}${RESET}"
+    hr
+
+    tg_send "🔒 <b>SSH Hardening выполнен</b>
+🖥 Сервер: <code>$(hostname)</code>
+🔑 Пользователь: <code>${target_user}</code>
+🚪 SSH порт: <code>${new_ssh_port}</code>
+🛡 Fail2Ban: включён
+🕐 $(date '+%Y-%m-%d %H:%M:%S')"
+}
 
 # ─── Проверки ────────────────────────────────────────────────
 check_root() {
@@ -740,6 +1071,24 @@ cmd_install() {
         systemctl stop caddy 2>/dev/null || true
     fi
 
+    # ── Шаг 0: Обновление системы ────────────────────────────
+    if [[ ! -f "$SYSUPDATE_DONE" ]]; then
+        echo -ne "${YELLOW}Обновить систему перед установкой? [Y/n]: ${RESET}"
+        read -r ans
+        [[ "${ans,,}" != "n" ]] && cmd_sysupdate
+    else
+        info "Система уже обновлялась: $(cat "$SYSUPDATE_DONE")"
+    fi
+
+    # ── Шаг 1: SSH Hardening ─────────────────────────────────
+    if [[ ! -f "$SSH_HARDENING_DONE" ]]; then
+        echo -ne "${YELLOW}Выполнить SSH Hardening? [Y/n]: ${RESET}"
+        read -r ans
+        [[ "${ans,,}" != "n" ]] && cmd_ssh_hardening
+    else
+        info "SSH уже настроен: $(grep SSH_PORT "$SSH_HARDENING_DONE" | cut -d= -f2)"
+    fi
+
     prompt_params
     check_domain "$DOMAIN"
     install_deps
@@ -880,7 +1229,9 @@ show_menu() {
     hr
     echo -e "${BOLD}${CYAN}   NaiveProxy Manager v${VERSION}${RESET}"
     echo -e "   Статус: ${status_str}  |  Домен: ${CYAN}${DOMAIN:-не задан}${RESET}"
-    echo -e "   Telegram: ${tg_str}  |  Юзеров: $(get_users | wc -l)"
+    local ssh_str="${YELLOW}не настроен${RESET}"
+    [[ -f "$SSH_HARDENING_DONE" ]] && ssh_str="${GREEN}$(grep SSH_PORT "$SSH_HARDENING_DONE" 2>/dev/null | cut -d= -f2)${RESET}"
+    echo -e "   Telegram: ${tg_str}  |  Юзеров: $(get_users | wc -l)  |  SSH порт: ${ssh_str}"
     hr
     echo -e "   ${BOLD}1)${RESET}  Установить NaiveProxy"
     echo -e "   ${BOLD}2)${RESET}  Статус"
@@ -892,9 +1243,12 @@ show_menu() {
     echo -e "   ${BOLD}8)${RESET}  Обновить Caddy"
     echo -e "   ${BOLD}9)${RESET}  Логи"
     echo -e "   ${BOLD}10)${RESET} Удалить NaiveProxy"
+    echo -e "   ──────────────────────────"
+    echo -e "   ${BOLD}11)${RESET} 🔒 SSH Hardening"
+    echo -e "   ${BOLD}12)${RESET} 🔄 Обновить систему"
     echo -e "   ${BOLD}0)${RESET}  Выход"
     hr
-    echo -ne "${CYAN}Выбор [0-10]: ${RESET}"
+    echo -ne "${CYAN}Выбор [0-12]: ${RESET}"
 }
 
 # ─── MAIN ────────────────────────────────────────────────────
@@ -914,9 +1268,11 @@ main() {
             logs)      cmd_logs ;;
             monitor)   cmd_monitor ;;
             users)     cmd_users ;;
-            tg-stats)  tg_send_stats; ok "Отправлено" ;;
+            tg-stats)      tg_send_stats; ok "Отправлено" ;;
+            ssh-hardening) cmd_ssh_hardening ;;
+            sysupdate)     cmd_sysupdate ;;
             *) err "Неизвестная команда: $1"
-               echo "Доступные: install status config restart update remove logs monitor users tg-stats"
+               echo "Доступные: install status config restart update remove logs monitor users tg-stats ssh-hardening sysupdate"
                exit 1 ;;
         esac
         exit 0
@@ -937,6 +1293,8 @@ main() {
             8)  cmd_update ;;
             9)  cmd_logs ;;
             10) cmd_remove ;;
+            11) cmd_ssh_hardening ;;
+            12) cmd_sysupdate ;;
             0)  echo -e "${GREEN}Пока!${RESET}"; exit 0 ;;
             *)  warn "Неверный выбор" ;;
         esac
