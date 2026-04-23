@@ -1,63 +1,116 @@
-# 🛡️ NaiveProxy Manager
-
 <div align="center">
 
-![Version](https://img.shields.io/badge/version-3.0.0-gold?style=for-the-badge)
-![Bash](https://img.shields.io/badge/bash-5.0+-4EAA25?style=for-the-badge&logo=gnubash&logoColor=white)
-![Caddy](https://img.shields.io/badge/Caddy-2.x-00ADD8?style=for-the-badge&logo=caddy&logoColor=white)
-![Ubuntu](https://img.shields.io/badge/Ubuntu-20.04%2B-E95420?style=for-the-badge&logo=ubuntu&logoColor=white)
-![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)
+# 🛡️ NaiveProxy Manager
 
-Bash-скрипт для установки и управления [NaiveProxy](https://github.com/klzgrad/naiveproxy) на Linux VPS.  
-Стек: **Caddy 2** + **klzgrad/forwardproxy@naive**
+**Полноценный менеджер приватного прокси-сервера на базе Caddy 2 + NaiveProxy**  
+Установка, безопасность, мониторинг и управление — всё в одном bash-скрипте
 
-[Установка](#-быстрая-установка) • [Возможности](#-возможности) • [SSH Hardening](#-ssh-hardening) • [Telegram](#-telegram-бот) • [FAQ](#-faq)
+---
+
+[![Version](https://img.shields.io/badge/version-3.2.0-D4A017?style=for-the-badge&logo=github)](https://github.com/ivanstudiya-cpu/naiveproxy/releases)
+[![Bash](https://img.shields.io/badge/bash-5.0+-4EAA25?style=for-the-badge&logo=gnubash&logoColor=white)](https://www.gnu.org/software/bash/)
+[![Caddy](https://img.shields.io/badge/Caddy-2.x-00ADD8?style=for-the-badge&logo=caddy&logoColor=white)](https://caddyserver.com)
+[![Ubuntu](https://img.shields.io/badge/Ubuntu-20.04%2B-E95420?style=for-the-badge&logo=ubuntu&logoColor=white)](https://ubuntu.com)
+[![ShellCheck](https://img.shields.io/badge/ShellCheck-passing-brightgreen?style=for-the-badge)](https://www.shellcheck.net)
+[![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](LICENSE)
+
+---
+
+[**Быстрый старт**](#-быстрый-старт) • [**Возможности**](#-возможности) • [**SSH Hardening**](#-ssh-hardening) • [**Telegram**](#-telegram-бот) • [**Клиенты**](#-клиентские-приложения) • [**FAQ**](#-faq)
 
 </div>
 
 ---
 
+## 🤔 Что это и зачем
+
+**NaiveProxy** — прокси-протокол который маскирует трафик под обычный браузер Chrome. Цензоры и DPI-системы видят легитимный HTTPS/2 и пропускают.
+
+**NaiveProxy Manager** — bash-скрипт который превращает голый VPS в полноценный приватный прокси-сервер за 10 минут. Без Docker, без панелей управления, без лишних зависимостей.
+
+```
+Твой телефон/ноутбук  ──►  [Цензор/DPI]  ──►  Твой VPS  ──►  Интернет
+        │                        │                  │
+   naive-client             Видит Chrome       Caddy + NaiveProxy
+   Chromium network         HTTPS/2 трафик     forwardproxy
+   stack                    Пропускает ✓       probe_resistance
+```
+
+---
+
 ## ✨ Возможности
 
-| Фича | Описание |
-|------|----------|
-| 🔄 Обновление системы | `apt upgrade` + автопатчи безопасности через `unattended-upgrades` |
-| 🔒 SSH Hardening | Ключ ED25519, новый пользователь, смена порта, блокировка root |
-| 🛡️ Fail2Ban | Автозащита от брутфорса: 3 попытки → бан на 24 часа |
-| 🎛️ Меню управления | Установка, статус, обновление, удаление через интерактивное меню |
-| 👥 Мультипользователь | Добавление/удаление пользователей без перезапуска |
-| 🤖 Telegram-бот | Алерты при падении/подъёме + статистика по команде |
-| 🔍 Проверка DNS | Скрипт убедится что домен указывает на сервер до получения TLS |
-| 🕵️ probe_resistance | Сервер выглядит как обычный сайт для сканеров и цензоров |
-| 👁️ Watchdog | Cron каждые 5 минут — автоперезапуск + алерт в Telegram |
-| 🔄 Автообновление | Caddy обновляется автоматически каждое воскресенье в 3:00 |
-| 📊 Мониторинг | Трафик, RAM, диск, uptime прямо в терминале или в Telegram |
-| 🌐 HTTP/3 (QUIC) | Открывает 443/udp автоматически через UFW |
-| 🚀 TCP BBR | Опциональное включение для ускорения |
-| 💾 Бэкап конфига | Перед каждым изменением автоматически |
-| 📋 Клиентский конфиг | URI, JSON для naive-client и sing-box |
+<table>
+<tr>
+<td width="50%">
+
+### 🔐 Безопасность сервера
+- **SSH Hardening** — ED25519 ключ, смена порта, блокировка root
+- **Fail2Ban** — 3 попытки → бан на 24 часа
+- **UFW** — только нужные порты, остальное закрыто
+- **Автообновления** — security-патчи ежедневно
+- **probe_resistance** — сервер выглядит как обычный сайт
+
+</td>
+<td width="50%">
+
+### 📡 Управление прокси
+- **Мультипользователь** — добавление/удаление без рестарта
+- **Автоматический TLS** — Let's Encrypt через Caddy
+- **Проверка сертификата** — срок, дней до истечения, алерт
+- **HTTP/3 (QUIC)** — автоматически на 443/udp
+- **TCP BBR** — опциональное ускорение
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+### 🤖 Мониторинг
+- **Telegram-бот** — алерты о падении, подъёме, обновлениях
+- **Watchdog** — cron каждые 5 минут, автоперезапуск
+- **Статистика** — трафик, RAM, диск, uptime в реальном времени
+- **Проверка домена** — доступность снаружи + HTTP-код
+- **Автообновление Caddy** — каждое воскресенье в 3:00
+
+</td>
+<td width="50%">
+
+### 🛡️ Надёжность кода
+- `set -euo pipefail` — падает при любой ошибке
+- **SHA256-верификация** бинарника Go после загрузки
+- **Валидация всех входных данных** — домен, логин, порт
+- **Бэкап конфига** перед каждым изменением
+- **ShellCheck passing** — нет предупреждений
+
+</td>
+</tr>
+</table>
 
 ---
 
 ## 📋 Требования
 
-| Параметр | Значение |
-|----------|----------|
+| Параметр | Требование |
+|----------|-----------|
 | ОС | Ubuntu 20.04 / 22.04 / 24.04 |
 | Права | root |
 | Домен | A-запись → IP сервера |
-| Порты | 80, 443 (tcp + udp) |
-| RAM | от 512 MB |
+| Порты | 80/tcp, 443/tcp, 443/udp |
+| RAM | от 512 MB (сборка Go ~300 MB) |
+| Место | от 1 GB |
 
 ---
 
-## ⚡ Быстрая установка
+## ⚡ Быстрый старт
+
+### Одна команда:
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/ivanstudiya-cpu/naiveproxy/main/naiveproxy.sh)
 ```
 
-Или вручную:
+### Или скачать и запустить:
 
 ```bash
 wget -O naiveproxy.sh https://raw.githubusercontent.com/ivanstudiya-cpu/naiveproxy/main/naiveproxy.sh
@@ -65,21 +118,36 @@ chmod +x naiveproxy.sh
 sudo bash naiveproxy.sh
 ```
 
+> ⚠️ При первом запуске скрипт последовательно предложит: обновить систему → настроить SSH → установить NaiveProxy. Каждый шаг можно пропустить.
+
+### Что происходит при установке:
+
+```
+[1/5] 🔄 Обновление системы
+      apt upgrade + настройка unattended-upgrades
+
+[2/5] 🔒 SSH Hardening
+      Новый пользователь + ED25519 ключ + смена порта + Fail2Ban
+
+[3/5] 📦 Сборка Caddy
+      xcaddy + klzgrad/forwardproxy@naive (3-10 минут)
+
+[4/5] ⚙️  Настройка
+      Caddyfile + systemd + UFW + BBR + Telegram (опц.)
+
+[5/5] ✅ Готово
+      Выводит URI и JSON конфиги для всех клиентов
+```
+
 ---
 
-## 🎮 Использование
-
-### Интерактивное меню
-
-```
-sudo bash naiveproxy.sh
-```
+## 🎮 Интерфейс
 
 ```
 ──────────────────────────────────────────
-   NaiveProxy Manager v3.0.0
+   NaiveProxy Manager v3.2.0
    Статус: ● работает  |  Домен: proxy.example.com
-   Telegram: подключён  |  Юзеров: 3  |  SSH порт: 49217
+   Telegram: подключён  |  Юзеров: 3  |  SSH порт: 52847
 ──────────────────────────────────────────
    1)  Установить NaiveProxy
    2)  Статус
@@ -98,213 +166,388 @@ sudo bash naiveproxy.sh
 ──────────────────────────────────────────
 ```
 
-### Аргументы командной строки
+### CLI без меню:
 
 ```bash
-sudo bash naiveproxy.sh install        # Установить (включает sysupdate + ssh-hardening)
-sudo bash naiveproxy.sh sysupdate      # Обновить систему
-sudo bash naiveproxy.sh ssh-hardening  # SSH Hardening
-sudo bash naiveproxy.sh status         # Статус
-sudo bash naiveproxy.sh config         # Показать конфиг
+sudo bash naiveproxy.sh install        # Полная установка
+sudo bash naiveproxy.sh status         # Статус + сертификат
+sudo bash naiveproxy.sh cert           # Только сертификат
+sudo bash naiveproxy.sh config         # Клиентский конфиг
 sudo bash naiveproxy.sh users          # Управление пользователями
-sudo bash naiveproxy.sh monitor        # Мониторинг
-sudo bash naiveproxy.sh restart        # Перезапустить
+sudo bash naiveproxy.sh monitor        # Мониторинг + статистика
+sudo bash naiveproxy.sh restart        # Перезапустить Caddy
 sudo bash naiveproxy.sh update         # Обновить Caddy
-sudo bash naiveproxy.sh logs           # Логи
+sudo bash naiveproxy.sh logs           # Логи в реальном времени
 sudo bash naiveproxy.sh tg-stats       # Статистика в Telegram
-sudo bash naiveproxy.sh remove         # Удалить
+sudo bash naiveproxy.sh ssh-hardening  # SSH Hardening
+sudo bash naiveproxy.sh sysupdate      # Обновление системы
+sudo bash naiveproxy.sh remove         # Удалить всё
 ```
 
 ---
 
 ## 🔒 SSH Hardening
 
-При первой установке (или через меню → 11) скрипт автоматически:
+Запускается автоматически при первой установке или вручную через меню → **11**.
 
-### 1. Создаёт нового sudo-пользователя
+### Что делает пошагово:
+
+**Шаг 1 — Новый sudo-пользователь**
 ```
 Имя нового пользователя: ivan
 ✓ Пользователь ivan создан с правами sudo
+✓ Сгенерирован пароль: Xk9mP2qR7nL4vT8w  ← СОХРАНИ!
 ```
 
-### 2. Генерирует ED25519 ключ
-Если в `~/.ssh/authorized_keys` нет ключей — генерируется новая пара ED25519.  
-Приватный ключ выводится прямо в терминал — **нужно скопировать и сохранить**.
+**Шаг 2 — ED25519 ключ**
+
+Если в `authorized_keys` нет ключей — генерируется новая пара ED25519.
+Приватный ключ выводится в терминал — нужно скопировать и сохранить.
 
 ```bash
-# Сохрани ключ на своём компе:
-# macOS/Linux:
+# Сохрани на своём компе:
 echo "ВСТАВЬ_КЛЮЧ" > ~/.ssh/id_naiveproxy && chmod 600 ~/.ssh/id_naiveproxy
 
 # Подключение после hardening:
 ssh -i ~/.ssh/id_naiveproxy -p НОВЫЙ_ПОРТ ivan@YOUR_IP
 ```
 
-### 3. Меняет SSH порт
-Предлагает ввести вручную или сгенерировать случайный (49000–65000).
+**Шаг 3 — Смена SSH порта**
 
-### 4. Применяет sshd_config
 ```
-PermitRootLogin       no
+1) Ввести вручную
+2) Случайный (49000-65000)  ← рекомендуется
+0) Оставить 22
+```
+
+Случайный порт проверяется через `ss -tlnp` — не назначается занятый.
+
+**Шаг 4 — sshd_config**
+
+```ini
+PermitRootLogin        no
 PasswordAuthentication no
 PubkeyAuthentication   yes
 MaxAuthTries           3
 LoginGraceTime         30
 X11Forwarding          no
+PermitEmptyPasswords   no
 ClientAliveInterval    300
 ```
 
-### 5. Настраивает UFW
-- Открывает новый SSH порт
-- Закрывает старый порт 22
-
-### 6. Устанавливает Fail2Ban
+**Шаг 5 — UFW + Fail2Ban**
 ```
-maxretry = 3       # 3 неверных попытки
-bantime  = 86400   # бан на 24 часа
-findtime = 600     # в течение 10 минут
+✓ Новый SSH порт открыт в UFW
+✓ Старый порт 22 закрыт в UFW
+✓ Fail2Ban: 3 попытки → бан 24 часа
 ```
 
-> ⚠️ **Важно:** перед тем как закрыть 22 порт, скрипт убеждается что новый порт открыт в UFW. Откат невозможен без доступа к консоли хостинга.
-
----
-
-## 🔄 Обновление системы
-
-При первой установке (или через меню → 12):
-
-```bash
-sudo bash naiveproxy.sh sysupdate
-```
-
-Выполняет:
-- `apt update && apt upgrade -y` — полное обновление
-- `apt autoremove && autoclean` — очистка
-- Настройка `unattended-upgrades` — автопатчи безопасности ежедневно
-- Проверка нужен ли `reboot` после обновления ядра
-
-**Что обновляется автоматически:**
-- ✅ Security-патчи Ubuntu (ежедневно)
-- ✅ Caddy (каждое воскресенье в 3:00 через cron)
-- ❌ Мажорные версии пакетов — только вручную (чтобы не сломать сервер)
+> ⚠️ Новый порт открывается в UFW **до** закрытия старого. При ошибке в конфиге — откат по сохранённому бэкапу.
 
 ---
 
 ## 🤖 Telegram-бот
 
-### Настройка
+### Настройка (2 минуты):
 
-1. Создай бота через [@BotFather](https://t.me/BotFather) → `/newbot`
-2. Узнай chat_id через [@userinfobot](https://t.me/userinfobot)
+1. Создай бота: [@BotFather](https://t.me/BotFather) → `/newbot`
+2. Узнай chat_id: [@userinfobot](https://t.me/userinfobot)
 3. Меню → **6) Настройка Telegram**
 
-### Уведомления
+### Что приходит в Telegram:
 
 | Событие | Сообщение |
 |---------|-----------|
-| Установка | ✅ NaiveProxy запущен |
+| Установка завершена | ✅ NaiveProxy запущен |
+| Caddy упал | 🔴 Упал → пытаюсь перезапустить |
+| Перезапуск успешен | ✅ Перезапущен |
+| Перезапуск не помог | ❌ Нужно вмешательство |
+| Caddy обновлён | 🔄 Версия X → Y |
 | SSH Hardening | 🔒 Выполнен, новый порт |
-| Обновление системы | 🔄 Обновлено |
-| Падение сервиса | 🔴 Упал + попытка автоперезапуска |
-| Обновление Caddy | 🔄 Старая → новая версия |
-| Новый пользователь | 👤 Добавлен |
-| Статистика | 📊 Полный отчёт |
+| Обновление системы | 🔄 Система обновлена |
+| Новый пользователь | 👤 Добавлен логин |
+| Удалён пользователь | 🗑 Удалён логин |
+| Сертификат < 7 дней | ⚠️ Скоро истекает! |
+| Статистика по запросу | 📊 Полный отчёт |
+
+### Пример статистики в Telegram:
+
+```
+📊 Статистика NaiveProxy
+
+🌐 Домен: proxy.example.com
+📡 Статус: 🟢 Работает
+🕐 Запущен: 2026-04-01 03:00
+📦 Caddy: v2.9.1
+👥 Пользователей: 3
+
+📈 Трафик (с ребута):
+⬇️ Входящий:  38.4G
+⬆️ Исходящий: 12.1G
+
+🖥 Сервер: vps-01
+💾 RAM: 412M/1.0G
+💿 Диск: 9.2G/25G (37%)
+
+🔐 Сертификат:
+📅 Истекает: Jul 22 2026 GMT
+⏳ Осталось: 90 дней
+```
 
 ---
 
-## 📱 Клиентский конфиг
+## 🔐 Сертификат TLS
 
-### URI
+Caddy получает и обновляет сертификат **автоматически** через Let's Encrypt.
+Тебе ничего делать не нужно — Caddy обновит за 30 дней до истечения.
+
+Скрипт добавляет мониторинг статуса:
+
 ```
-naive+https://user:password@your.domain.com:443
+  TLS Сертификат:
+  Домен:     proxy.example.com
+  Истекает:  Jul 22 01:28:35 2026 GMT
+  Осталось:  90 дней                    ← 🟢 зелёный
+  Выдан:     Let's Encrypt
 ```
 
-### JSON (naive-client)
+| Дней осталось | Индикация | Действие |
+|--------------|-----------|----------|
+| > 30 | 🟢 Зелёный | Всё хорошо |
+| 7–30 | 🟡 Жёлтый | Предупреждение |
+| < 7 | 🔴 Красный | Алерт в Telegram |
+
+```bash
+# Проверить вручную:
+sudo bash naiveproxy.sh cert
+```
+
+---
+
+## 👥 Мультипользователь
+
+```bash
+sudo bash naiveproxy.sh users
+```
+
+```
+  1) Список пользователей
+  2) Добавить пользователя     ← caddy reload, сессии не прерываются
+  3) Удалить пользователя
+  4) Сменить пароль
+```
+
+Каждый пользователь — отдельный URI:
+```
+naive+https://alice:pass1@proxy.example.com:443
+naive+https://bob:pass2@proxy.example.com:443
+```
+
+---
+
+## 📱 Клиентские приложения
+
+### URI (вставляется в любой клиент)
+```
+naive+https://USERNAME:PASSWORD@YOUR_DOMAIN:443
+```
+
+### JSON для naive-client
 ```json
 {
   "listen": "socks://127.0.0.1:1080",
-  "proxy": "https://user:password@your.domain.com:443"
+  "proxy": "https://USERNAME:PASSWORD@YOUR_DOMAIN:443"
 }
 ```
 
-### JSON (sing-box)
+### JSON для sing-box
 ```json
 {
   "type": "http",
   "tag": "naiveproxy-out",
-  "server": "your.domain.com",
+  "server": "YOUR_DOMAIN",
   "server_port": 443,
-  "username": "user",
-  "password": "password",
-  "tls": { "enabled": true, "server_name": "your.domain.com" }
+  "username": "USERNAME",
+  "password": "PASSWORD",
+  "tls": {
+    "enabled": true,
+    "server_name": "YOUR_DOMAIN"
+  }
 }
 ```
 
-### Клиенты
+### Рекомендуемые клиенты
 
-| Клиент | Платформа |
-|--------|-----------|
-| [NekoBox](https://github.com/MatsuriDayo/NekoBoxForAndroid) | Android |
-| [sing-box](https://github.com/SagerNet/sing-box) | iOS / Android / Desktop |
-| [Hiddify](https://github.com/hiddify/hiddify-next) | Android / Desktop |
-| [v2rayN](https://github.com/2dust/v2rayN) | Windows |
-| [naive](https://github.com/klzgrad/naiveproxy/releases) | Linux CLI |
+| Клиент | Платформа | Ссылка |
+|--------|-----------|--------|
+| NekoBox | Android | [GitHub](https://github.com/MatsuriDayo/NekoBoxForAndroid/releases) |
+| Hiddify | Android / iOS / Windows / macOS | [GitHub](https://github.com/hiddify/hiddify-next/releases) |
+| sing-box | Все платформы | [GitHub](https://github.com/SagerNet/sing-box) |
+| v2rayN | Windows | [GitHub](https://github.com/2dust/v2rayN/releases) |
+| naive | Linux CLI | [GitHub](https://github.com/klzgrad/naiveproxy/releases) |
+
+> ⚠️ v2rayNG **не поддерживает** NaiveProxy. Используй NekoBox или Hiddify.
+
+### Проверить без клиента:
+```bash
+curl -v --proxy "https://USERNAME:PASSWORD@YOUR_DOMAIN:443" https://ifconfig.me
+```
+
+---
+
+## 🔄 Автообновление системы
+
+```bash
+sudo bash naiveproxy.sh sysupdate
+```
+
+| Компонент | Периодичность | Способ |
+|-----------|--------------|--------|
+| Security-патчи Ubuntu | Ежедневно | unattended-upgrades |
+| Caddy + forwardproxy | Воскресенье 3:00 | cron |
+| Мажорные пакеты | Вручную | `sysupdate` |
 
 ---
 
 ## 📁 Файлы на сервере
 
 ```
-/usr/local/bin/caddy                — бинарник Caddy
-/etc/caddy/Caddyfile                — конфиг Caddy
-/etc/naiveproxy/naive.conf          — параметры (домен, email, TG)
-/etc/naiveproxy/users.conf          — список пользователей (chmod 600)
-/etc/naiveproxy/backups/            — бэкапы Caddyfile
-/etc/naiveproxy/monitor.sh          — watchdog
-/etc/naiveproxy/.ssh_hardened       — маркер SSH hardening
-/etc/naiveproxy/.sysupdate_done     — маркер обновления системы
-/etc/fail2ban/jail.local            — конфиг Fail2Ban
-/etc/apt/apt.conf.d/50unattended-upgrades
-/var/www/html/index.html            — заглушка-сайт
-/var/log/caddy/                     — логи
+/usr/local/bin/caddy
+/etc/caddy/Caddyfile                      (chmod 600)
+/etc/naiveproxy/
+├── naive.conf                            (chmod 600) — домен, TG токен
+├── users.conf                            (chmod 600) — логины:пароли
+├── monitor.sh                            — watchdog
+├── .ssh_hardened                         — маркер SSH hardening
+├── .sysupdate_done                       — маркер обновления
+└── backups/Caddyfile.YYYYMMDD_HHMMSS    — бэкапы
+/etc/fail2ban/jail.local
+/var/www/html/index.html                  — заглушка-сайт
+/var/log/caddy/access.log
+/var/log/caddy/naive.log
+/etc/systemd/system/caddy.service
 ```
 
 ---
 
-## 🔐 Безопасность (аудит v2.1 → v3.0)
+## 🔐 Модель безопасности
 
-| # | Защита |
-|---|--------|
-| 1 | `source config` — проверка владельца (root) и прав (600) перед загрузкой |
-| 2 | Валидация домена по regex — запрет спецсимволов |
-| 3 | Валидация логина пользователя — защита от sed-инъекции |
-| 4 | SHA256-верификация бинарника Go после загрузки |
-| 5 | Watchdog-флаг в `/run` вместо `/tmp` (защита от race condition) |
-| 6 | `curl` к Telegram — `--max-time 10 --retry 2` |
-| 7 | Три fallback для определения IP сервера |
-| 8 | `set -euo pipefail` — скрипт падает при любой ошибке |
-| 9 | ED25519 вместо RSA для SSH-ключей |
-| 10 | Бэкап sshd_config перед изменениями |
-| 11 | Проверка `sshd -t` перед перезапуском |
-| 12 | UFW: новый SSH порт открывается ДО закрытия старого |
+```
+Сервер закрыт снаружи:
+  ✓ UFW: только 80, 443/tcp, 443/udp + SSH порт
+  ✓ SSH: только ключ, root запрещён, нестандартный порт
+  ✓ Fail2Ban: автобан брутфорса
+
+Прокси скрыт от сканеров:
+  ✓ probe_resistance: выглядит как обычный сайт
+  ✓ TLS fingerprint = Chrome (Chromium network stack)
+  ✓ HTTP/2 CONNECT: неотличимо от браузерного трафика
+
+Код безопасен:
+  ✓ SHA256 верификация Go бинарника
+  ✓ Валидация домена, логинов, портов
+  ✓ Защита от sed-инъекций в именах пользователей
+  ✓ source конфига только если владелец root и права 600
+  ✓ Watchdog-флаг в /run (не /tmp)
+  ✓ ShellCheck passing
+```
 
 ---
 
 ## ❓ FAQ
 
-**Сборка Caddy занимает слишком долго**  
-Нормально — xcaddy компилирует Go-код. На 1 vCPU до 10 минут.
+<details>
+<summary><b>Сборка Caddy занимает очень долго</b></summary>
 
-**Заблокировал себя после SSH hardening**  
-Зайди через консоль хостинга (VNC/KVM) и проверь: `ufw status`, `sshd -T | grep port`.
+Нормально — xcaddy компилирует Go-код с нуля. На VPS с 1 vCPU занимает 5-10 минут. Не прерывай.
 
-**Как проверить что NaiveProxy работает:**
+</details>
+
+<details>
+<summary><b>Заблокировал себя после SSH hardening</b></summary>
+
+Зайди через консоль хостинга (VNC/KVM) и выполни:
 ```bash
-curl -v --proxy "https://user:pass@your.domain.com:443" https://ifconfig.me
+ufw allow 22/tcp
+systemctl restart sshd
 ```
 
-**Где хранятся пароли:**  
-`/etc/naiveproxy/users.conf` — права 600, только root.
+</details>
+
+<details>
+<summary><b>Caddy не получает сертификат</b></summary>
+
+```bash
+dig +short YOUR_DOMAIN          # домен должен указывать на этот IP
+ss -tlnp | grep :80             # порт 80 должен быть свободен
+journalctl -u caddy -n 50 | grep -i "error\|acme"
+```
+
+</details>
+
+<details>
+<summary><b>v2rayNG не работает</b></summary>
+
+v2rayNG не поддерживает NaiveProxy. Используй NekoBox (Android) или Hiddify (все платформы).
+
+</details>
+
+<details>
+<summary><b>Как добавить пользователя без разрыва сессий</b></summary>
+
+```bash
+sudo bash naiveproxy.sh users  # → 2) Добавить
+```
+
+Используется `caddy reload` — активные соединения не прерываются.
+
+</details>
+
+---
+
+## 📊 Сравнение с аналогами
+
+| Функция | NaiveProxy Manager | x-ui / 3x-ui | Marzban |
+|---------|:-----------------:|:------------:|:-------:|
+| Без Docker | ✅ | ❌ | ❌ |
+| SSH Hardening | ✅ | ❌ | ❌ |
+| Обновление системы | ✅ | ❌ | ❌ |
+| Проверка сертификата | ✅ | ❌ | ❌ |
+| Watchdog + автоперезапуск | ✅ | ❌ | ❌ |
+| SHA256 верификация | ✅ | ❌ | ❌ |
+| probe_resistance | ✅ | ❌ | ❌ |
+| Telegram алерты | ✅ | ✅ | ✅ |
+| ShellCheck passing | ✅ | — | — |
+
+---
+
+## 📜 Changelog
+
+### v3.2.0
+- ✨ Проверка TLS сертификата — срок, дней до истечения, цвет
+- 🤖 Алерт в Telegram при сертификате < 7 дней
+- 📊 Инфо о сертификате в tg-stats
+- 🆕 CLI команда `cert`
+
+### v3.1.0
+- 🐛 Фикс отката sshd_config (неверный бэкап)
+- 🐛 Фикс cron `update --auto`
+- 🐛 Фикс script_path при `bash <(curl)`
+- 🔒 UFW: проверка активности перед правилами
+- 🔒 Случайный SSH порт: проверка занятости
+- 🔒 `chpasswd`: echo → printf
+
+### v3.0.0
+- ✨ Обновление системы + unattended-upgrades
+- ✨ SSH Hardening — ED25519, новый юзер, Fail2Ban
+- 🆕 CLI: `ssh-hardening`, `sysupdate`
+
+### v2.1.0
+- 🔒 SHA256 верификация Go, валидация ввода
+- 🐛 Watchdog флаг в /run вместо /tmp
+
+### v2.0.0
+- ✨ Мультипользователь, Telegram-бот, Watchdog, Мониторинг
 
 ---
 
@@ -315,5 +558,9 @@ MIT © [ivanstudiya-cpu](https://github.com/ivanstudiya-cpu)
 ---
 
 <div align="center">
-<sub>Если скрипт помог — ⭐ звезда приветствуется!</sub>
+
+**Если скрипт помог — поставь ⭐ звезду, это мотивирует развивать проект**
+
+[![GitHub stars](https://img.shields.io/github/stars/ivanstudiya-cpu/naiveproxy?style=social)](https://github.com/ivanstudiya-cpu/naiveproxy/stargazers)
+
 </div>
