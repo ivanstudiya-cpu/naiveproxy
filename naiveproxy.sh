@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-#   NaiveProxy Manager v3.0.0 — by ivanstudiya-cpu
+#   NaiveProxy Manager v3.1.0 — by ivanstudiya-cpu
 #   Стек: Caddy 2 + klzgrad/forwardproxy@naive
 #   ОС: Ubuntu 20.04 / 22.04 / 24.04
 #   GitHub: https://github.com/ivanstudiya-cpu/naiveproxy
@@ -8,7 +8,7 @@
 
 set -euo pipefail
 
-VERSION="3.0.0"
+VERSION="3.1.0"
 
 # ─── Цвета ───────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -48,6 +48,8 @@ cmd_sysupdate() {
     hr
     echo -e "${BOLD}  Обновление системы${RESET}"
     hr
+    # Загружаем конфиг для Telegram (может вызываться до основного load_config)
+    load_config 2>/dev/null || true
 
     info "Обновляю списки пакетов..."
     apt-get update -q
@@ -167,7 +169,7 @@ cmd_ssh_hardening() {
             info "Сгенерирован пароль: ${BOLD}${user_pass}${RESET}"
             info "СОХРАНИ ЕГО СЕЙЧАС!"
         fi
-        echo "${new_user}:${user_pass}" | chpasswd
+        printf "%s:%s" "${new_user}" "${user_pass}" | chpasswd
         ok "Пользователь ${new_user} создан с правами sudo"
         break
     done
@@ -242,7 +244,13 @@ cmd_ssh_hardening() {
             done
             ;;
         2)
-            new_ssh_port=$(( RANDOM % 16000 + 49000 ))
+            # Генерируем случайный порт и проверяем что он свободен
+            while true; do
+                new_ssh_port=$(( RANDOM % 16000 + 49000 ))
+                if ! ss -tlnp | grep -q ":${new_ssh_port} "; then
+                    break
+                fi
+            done
             info "Случайный порт: ${BOLD}${new_ssh_port}${RESET}"
             ;;
         *)
@@ -256,9 +264,11 @@ cmd_ssh_hardening() {
     echo -e "${BOLD}  Шаг 4: Настройка sshd_config${RESET}"
     hr
 
-    # Бэкап
-    cp "$sshd_config" "${sshd_config}.bak.$(date +%Y%m%d_%H%M%S)"
-    ok "Бэкап sshd_config создан"
+    # Бэкап — сохраняем метку времени для возможного отката
+    local sshd_backup
+    sshd_backup="${sshd_config}.bak.$(date +%Y%m%d_%H%M%S)"
+    cp "$sshd_config" "$sshd_backup"
+    ok "Бэкап sshd_config создан: $sshd_backup"
 
     # Применяем настройки
     local disable_root="yes"
@@ -287,8 +297,8 @@ cmd_ssh_hardening() {
 
     # Проверяем конфиг
     if ! sshd -t 2>/dev/null; then
-        err "Ошибка в sshd_config! Откатываю..."
-        cp "${sshd_config}.bak.$(date +%Y%m%d_%H%M%S)" "$sshd_config" 2>/dev/null || true
+        err "Ошибка в sshd_config! Откатываю из $sshd_backup..."
+        cp "$sshd_backup" "$sshd_config" 2>/dev/null || true
         return 1
     fi
 
@@ -297,6 +307,11 @@ cmd_ssh_hardening() {
     echo -e "${BOLD}  Шаг 5: Firewall + Fail2Ban${RESET}"
     hr
 
+    # Убеждаемся что UFW активен
+    if ! ufw status | grep -q "Status: active"; then
+        warn "UFW неактивен — включаю..."
+        ufw --force enable >/dev/null 2>&1 || true
+    fi
     # Открываем новый порт ПЕРЕД закрытием старого
     ufw allow "${new_ssh_port}/tcp" comment "SSH hardened" >/dev/null 2>&1 || true
 
@@ -557,7 +572,10 @@ install_monitor() {
     cat > "$MONITOR_SCRIPT" <<'MONITOR'
 #!/bin/bash
 CONFIG_FILE="/etc/naiveproxy/naive.conf"
-[[ -f "$CONFIG_FILE" ]] && source "$CONFIG_FILE"
+if [[ -f "$CONFIG_FILE" ]]; then
+    _owner=$(stat -c '%U' "$CONFIG_FILE" 2>/dev/null || echo "unknown")
+    [[ "$_owner" == "root" ]] && source "$CONFIG_FILE"
+fi
 
 tg_send() {
     local msg="$1"
@@ -596,12 +614,19 @@ MONITOR
     chmod +x "$MONITOR_SCRIPT"
 
     local script_path
-    script_path=$(realpath "$0" 2>/dev/null || echo "/usr/local/bin/naiveproxy.sh")
+    # Если запущен через bash <(curl), $0 будет /dev/fd/xx — используем фиксированный путь
+    script_path=$(realpath "$0" 2>/dev/null || echo "")
+    if [[ -z "$script_path" || "$script_path" == /dev/fd/* || "$script_path" == /proc/* ]]; then
+        script_path="/usr/local/bin/naiveproxy.sh"
+        # Копируем себя в постоянное место если ещё не там
+        [[ -f "$script_path" ]] || cp "$0" "$script_path" 2>/dev/null || true
+        [[ -f "$script_path" ]] && chmod +x "$script_path"
+    fi
 
     # Очищаем старые naive-cron записи, добавляем новые
     ( crontab -l 2>/dev/null | grep -v "naiveproxy\|monitor\.sh" || true
       echo "*/5 * * * * /bin/bash $MONITOR_SCRIPT"
-      echo "0 3 * * 0 /bin/bash ${script_path} update --auto >> ${LOG_DIR}/autoupdate.log 2>&1"
+      echo "0 3 * * 0 /bin/bash ${script_path} update >> ${LOG_DIR}/autoupdate.log 2>&1"
     ) | crontab -
 
     ok "Watchdog: каждые 5 минут"
@@ -669,7 +694,7 @@ install_deps() {
         rm -rf /usr/local/go
         tar -C /usr/local -xzf /tmp/go.tar.gz
         rm /tmp/go.tar.gz
-        echo 'export PATH="/usr/local/go/bin:$PATH"' > /etc/profile.d/go.sh
+        printf 'export PATH="/usr/local/go/bin:$PATH"\n' > /etc/profile.d/go.sh
     fi
 
     export PATH="/usr/local/go/bin:$PATH"
@@ -784,8 +809,13 @@ EOF
 
 # ─── UFW ─────────────────────────────────────────────────────
 setup_firewall() {
-    command -v ufw &>/dev/null || return
+    command -v ufw &>/dev/null || { warn "UFW не найден, пропускаю"; return; }
     info "Настраиваю UFW..."
+    # Включаем UFW если не активен
+    if ! ufw status | grep -q "Status: active"; then
+        ufw --force enable >/dev/null 2>&1 || true
+        ok "UFW включён"
+    fi
     ufw allow 80/tcp  comment 'NaiveProxy ACME'  >/dev/null 2>&1 || true
     ufw allow 443/tcp comment 'NaiveProxy HTTPS' >/dev/null 2>&1 || true
     ufw allow 443/udp comment 'NaiveProxy HTTP3' >/dev/null 2>&1 || true
