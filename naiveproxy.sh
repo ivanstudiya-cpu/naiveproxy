@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-#   NaiveProxy Manager v3.1.0 — by ivanstudiya-cpu
+#   NaiveProxy Manager v3.2.0 — by ivanstudiya-cpu
 #   Стек: Caddy 2 + klzgrad/forwardproxy@naive
 #   ОС: Ubuntu 20.04 / 22.04 / 24.04
 #   GitHub: https://github.com/ivanstudiya-cpu/naiveproxy
@@ -8,7 +8,7 @@
 
 set -euo pipefail
 
-VERSION="3.1.0"
+VERSION="3.2.0"
 
 # ─── Цвета ───────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -518,7 +518,23 @@ tg_send_stats() {
 
 🖥 Сервер: <code>$(hostname)</code>
 💾 RAM: $(free -h | awk '/Mem:/{print $3"/"$2}')
-💿 Диск: $(df -h / | awk 'NR==2{print $3"/"$2" ("$5")"}')"
+💿 Диск: $(df -h / | awk 'NR==2{print $3"/"$2" ("$5")"}')
+
+🔐 <b>Сертификат:</b>
+$(
+cert_days=""
+cert_info=$(echo | timeout 5 openssl s_client -connect "${DOMAIN:-localhost}:443" -servername "${DOMAIN:-localhost}" 2>/dev/null | openssl x509 -noout -dates 2>/dev/null || echo "")
+if [[ -n "$cert_info" ]]; then
+    not_after=$(echo "$cert_info" | grep "notAfter" | cut -d= -f2)
+    expire_ts=$(date -d "$not_after" +%s 2>/dev/null || echo 0)
+    now_ts=$(date +%s)
+    cert_days=$(( (expire_ts - now_ts) / 86400 ))
+    echo "📅 Истекает: ${not_after}"
+    echo "⏳ Осталось: ${cert_days} дней"
+else
+    echo "❓ Недоступен"
+fi
+)"
 }
 
 # ─── Настройка Telegram ───────────────────────────────────────
@@ -1078,6 +1094,7 @@ cmd_monitor() {
         else
             warn "https://${DOMAIN} — HTTP $http_code"
         fi
+        check_cert "${DOMAIN:-}"
     fi
 
     echo
@@ -1152,6 +1169,62 @@ cmd_install() {
     print_client_config
 }
 
+
+# ─── ПРОВЕРКА СЕРТИФИКАТА ─────────────────────────────────────
+check_cert() {
+    local domain="${1:-${DOMAIN:-}}"
+    [[ -z "$domain" ]] && return
+
+    echo
+    echo -e "  ${BOLD}TLS Сертификат:${RESET}"
+
+    local cert_info
+    cert_info=$(echo | timeout 5 openssl s_client -connect "${domain}:443"         -servername "$domain" 2>/dev/null | openssl x509 -noout         -dates -issuer -subject 2>/dev/null || echo "")
+
+    if [[ -z "$cert_info" ]]; then
+        warn "Не удалось получить данные сертификата"
+        return
+    fi
+
+    local not_after issuer
+    not_after=$(echo "$cert_info" | grep "notAfter" | cut -d= -f2)
+    issuer=$(echo "$cert_info" | grep "issuer" | grep -oP "O=\K[^,]+" || echo "н/д")
+
+    # Считаем дней до истечения
+    local expire_ts now_ts days_left
+    expire_ts=$(date -d "$not_after" +%s 2>/dev/null || echo 0)
+    now_ts=$(date +%s)
+    days_left=$(( (expire_ts - now_ts) / 86400 ))
+
+    # Цвет в зависимости от срока
+    local days_color
+    if [[ $days_left -gt 30 ]]; then
+        days_color="${GREEN}"
+    elif [[ $days_left -gt 7 ]]; then
+        days_color="${YELLOW}"
+    else
+        days_color="${RED}"
+    fi
+
+    echo -e "  Домен:     ${CYAN}${domain}${RESET}"
+    echo -e "  Истекает:  ${not_after}"
+    echo -e "  Осталось:  ${days_color}${days_left} дней${RESET}"
+    echo -e "  Выдан:     ${issuer}"
+
+    if [[ $days_left -le 7 ]]; then
+        err "СЕРТИФИКАТ ИСТЕКАЕТ МЕНЕЕ ЧЕМ ЧЕРЕЗ 7 ДНЕЙ!"
+        tg_send "⚠️ <b>Сертификат истекает!</b>
+🌐 Домен: <code>${domain}</code>
+📅 Осталось: <b>${days_left} дней</b>
+🕐 $(date '+%Y-%m-%d %H:%M:%S')
+🔧 Caddy обновит автоматически — проверь что он запущен!"
+    elif [[ $days_left -le 30 ]]; then
+        warn "Сертификат истекает через ${days_left} дней — Caddy обновит автоматически"
+    else
+        ok "Сертификат действителен ещё ${days_left} дней"
+    fi
+}
+
 # ─── СТАТУС ──────────────────────────────────────────────────
 cmd_status() {
     hr
@@ -1168,6 +1241,7 @@ cmd_status() {
     load_config
     [[ -n "${DOMAIN:-}" ]] && echo -e "\n  Домен:   $DOMAIN"
     echo -e "  Юзеров: $(get_users | wc -l)"
+    check_cert "${DOMAIN:-}"
     echo
     info "Последние 10 строк лога:"
     journalctl -u caddy -n 10 --no-pager 2>/dev/null || true
@@ -1301,8 +1375,9 @@ main() {
             tg-stats)      tg_send_stats; ok "Отправлено" ;;
             ssh-hardening) cmd_ssh_hardening ;;
             sysupdate)     cmd_sysupdate ;;
+            cert)          load_config; check_cert "${DOMAIN:-}" ;;
             *) err "Неизвестная команда: $1"
-               echo "Доступные: install status config restart update remove logs monitor users tg-stats ssh-hardening sysupdate"
+               echo "Доступные: install status config restart update remove logs monitor users tg-stats ssh-hardening sysupdate cert"
                exit 1 ;;
         esac
         exit 0
