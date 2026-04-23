@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-#   NaiveProxy Manager v2.0 — by ivanstudiya-cpu
+#   NaiveProxy Manager v2.1.0 — by ivanstudiya-cpu
 #   Стек: Caddy 2 + klzgrad/forwardproxy@naive
 #   ОС: Ubuntu 20.04 / 22.04 / 24.04
 #   GitHub: https://github.com/ivanstudiya-cpu/naiveproxy
@@ -8,7 +8,7 @@
 
 set -euo pipefail
 
-VERSION="2.0.0"
+VERSION="2.1.0"
 
 # ─── Цвета ───────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -58,6 +58,15 @@ check_installed() {
 # ─── Конфиг ──────────────────────────────────────────────────
 load_config() {
     if [[ -f "$CONFIG_FILE" ]]; then
+        # Безопасность: проверяем владельца и права перед source
+        local owner perms
+        owner=$(stat -c '%U' "$CONFIG_FILE" 2>/dev/null || echo "unknown")
+        perms=$(stat -c '%a' "$CONFIG_FILE" 2>/dev/null || echo "000")
+        if [[ "$owner" != "root" ]]; then
+            err "БЕЗОПАСНОСТЬ: $CONFIG_FILE принадлежит '$owner', ожидается root. Прерываю."
+            exit 1
+        fi
+        [[ "$perms" != "600" ]] && chmod 600 "$CONFIG_FILE"
         # shellcheck source=/dev/null
         source "$CONFIG_FILE"
     fi
@@ -92,7 +101,8 @@ get_users() {
 tg_send() {
     local message="$1"
     [[ -z "${TG_TOKEN:-}" || -z "${TG_CHAT_ID:-}" ]] && return 0
-    curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+    curl -s --max-time 10 --retry 2 --retry-delay 3 \
+        -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
         -d chat_id="${TG_CHAT_ID}" \
         -d parse_mode="HTML" \
         -d text="${message}" \
@@ -221,13 +231,14 @@ CONFIG_FILE="/etc/naiveproxy/naive.conf"
 tg_send() {
     local msg="$1"
     [[ -z "${TG_TOKEN:-}" || -z "${TG_CHAT_ID:-}" ]] && return
-    curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+    curl -s --max-time 10 --retry 2 \
+        -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
         -d chat_id="${TG_CHAT_ID}" \
         -d parse_mode="HTML" \
         -d text="${msg}" >/dev/null 2>&1 || true
 }
 
-FLAG="/tmp/naiveproxy_was_down"
+FLAG="/run/naiveproxy_was_down"
 
 if ! systemctl is-active --quiet caddy 2>/dev/null; then
     if [[ ! -f "$FLAG" ]]; then
@@ -272,8 +283,7 @@ check_domain() {
     info "Проверяю DNS для $domain..."
 
     local server_ip domain_ip
-    server_ip=$(curl -s4 --max-time 5 https://ifconfig.me 2>/dev/null \
-        || curl -s4 --max-time 5 https://api.ipify.org 2>/dev/null || echo "")
+    server_ip=$(curl -s4 --max-time 5 https://ifconfig.me 2>/dev/null         || curl -s4 --max-time 5 https://api.ipify.org 2>/dev/null         || curl -s4 --max-time 5 https://checkip.amazonaws.com 2>/dev/null         || echo "")
     domain_ip=$(getent hosts "$domain" 2>/dev/null | awk '{print $1}' | head -1 || echo "")
 
     if [[ -z "$domain_ip" ]]; then
@@ -309,7 +319,22 @@ install_deps() {
         local arch
         arch=$(dpkg --print-architecture)
         [[ "$arch" == "arm64" ]] || arch="amd64"
-        wget -q "https://go.dev/dl/go1.22.4.linux-${arch}.tar.gz" -O /tmp/go.tar.gz
+        local go_ver_pin="1.22.4"
+        local go_url="https://go.dev/dl/go${go_ver_pin}.linux-${arch}.tar.gz"
+        local go_sha256_amd64="ba79d4526102575196273416239cca418a651e049c2b099f3159db85e7bade7d"
+        local go_sha256_arm64="a8e177c354d2e4a1b61020aca3c6f61bfba9a2e8f52c8dcef2b87abe86bd8fc0"
+        local expected_sha
+        [[ "$arch" == "arm64" ]] && expected_sha="$go_sha256_arm64" || expected_sha="$go_sha256_amd64"
+
+        wget -q "$go_url" -O /tmp/go.tar.gz
+        local actual_sha
+        actual_sha=$(sha256sum /tmp/go.tar.gz | awk '{print $1}')
+        if [[ "$actual_sha" != "$expected_sha" ]]; then
+            err "SHA256 Go не совпадает! Возможная атака на цепочку поставок. Прерываю."
+            rm -f /tmp/go.tar.gz
+            exit 1
+        fi
+        ok "SHA256 Go подтверждён"
         rm -rf /usr/local/go
         tar -C /usr/local -xzf /tmp/go.tar.gz
         rm /tmp/go.tar.gz
@@ -523,8 +548,11 @@ prompt_params() {
     while true; do
         echo -ne "${CYAN}Домен (например, proxy.example.com): ${RESET}"
         read -r DOMAIN
-        [[ -n "$DOMAIN" ]] && break
-        err "Домен не может быть пустым"
+        # Валидация: только буквы, цифры, дефис, точка
+        if [[ -n "$DOMAIN" && "$DOMAIN" =~ ^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$ ]]; then
+            break
+        fi
+        err "Неверный формат домена. Только буквы, цифры, дефис, точка."
     done
 
     while true; do
@@ -580,6 +608,11 @@ cmd_users() {
             2)
                 echo -ne "${CYAN}Новый логин: ${RESET}"; read -r new_user
                 [[ -z "$new_user" ]] && { err "Логин не может быть пустым"; continue; }
+                # Валидация: только буквы, цифры, дефис, подчёркивание (защита от sed-инъекции)
+                if [[ ! "$new_user" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+                    err "Логин содержит недопустимые символы. Только: a-z A-Z 0-9 _ -"
+                    continue
+                fi
                 if get_users | grep -q "^${new_user}:"; then
                     err "Пользователь $new_user уже существует"
                     continue
