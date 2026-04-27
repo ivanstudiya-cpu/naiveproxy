@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-#   NaiveProxy Manager v3.2.0 — by ivanstudiya-cpu
+#   NaiveProxy Manager v3.3.0 — by ivanstudiya-cpu
 #   Стек: Caddy 2 + klzgrad/forwardproxy@naive
 #   ОС: Ubuntu 20.04 / 22.04 / 24.04
 #   GitHub: https://github.com/ivanstudiya-cpu/naiveproxy
@@ -8,7 +8,10 @@
 
 set -euo pipefail
 
-VERSION="3.2.0"
+VERSION="3.3.0"
+GITHUB_RAW="https://raw.githubusercontent.com/ivanstudiya-cpu/naiveproxy/main/naiveproxy.sh"
+GITHUB_API="https://api.github.com/repos/ivanstudiya-cpu/naiveproxy/releases/latest"
+SCRIPT_PATH="/usr/local/bin/naiveproxy.sh"
 
 # ─── Цвета ───────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -422,6 +425,7 @@ save_config() {
     mkdir -p "$CONFIG_DIR"
     cat > "$CONFIG_FILE" <<EOF
 DOMAIN="${DOMAIN:-}"
+DOMAINS="${DOMAINS:-${DOMAIN:-}}"
 EMAIL="${EMAIL:-}"
 TG_TOKEN="${TG_TOKEN:-}"
 TG_CHAT_ID="${TG_CHAT_ID:-}"
@@ -736,6 +740,78 @@ build_caddy() {
     ok "Caddy собран: $("$CADDY_BIN" version 2>/dev/null | head -1)"
 }
 
+
+# ── Мультидомен: генерация Caddyfile ─────────────────────────
+write_caddyfile_multi() {
+    mkdir -p "$CADDY_DIR" "$WEBROOT" "$LOG_DIR"
+
+    cat > "$WEBROOT/index.html" <<'HTMLEOF'
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Welcome</title></head>
+<body><h1>It works!</h1></body>
+</html>
+HTMLEOF
+
+    # Собираем auth блоки
+    local auth_blocks=""
+    while IFS=: read -r u p; do
+        [[ -z "$u" ]] && continue
+        auth_blocks+="        basic_auth ${u} ${p}"$'\n'
+    done < <(get_users)
+
+    # Глобальный блок
+    cat > "$CADDYFILE" <<EOF
+{
+    order forward_proxy before file_server
+    log {
+        output file ${LOG_DIR}/access.log {
+            roll_size 50mb
+            roll_keep 3
+        }
+    }
+}
+
+EOF
+
+    # Блок для каждого домена
+    local domains_list
+    IFS=',' read -ra domains_list <<< "${DOMAINS:-${DOMAIN:-}}"
+
+    for dom in "${domains_list[@]}"; do
+        dom="${dom// /}"  # убираем пробелы
+        [[ -z "$dom" ]] && continue
+        cat >> "$CADDYFILE" <<EOF
+${dom}:443 {
+    tls ${EMAIL}
+
+    forward_proxy {
+${auth_blocks}        hide_ip
+        hide_via
+        probe_resistance
+    }
+
+    file_server {
+        root ${WEBROOT}
+    }
+
+    log {
+        output file ${LOG_DIR}/naive_${dom//./_}.log {
+            roll_size 20mb
+            roll_keep 5
+        }
+    }
+}
+
+EOF
+    done
+
+    chmod 600 "$CADDYFILE"
+    local dom_count
+    dom_count=$(echo "${DOMAINS:-${DOMAIN:-}}" | tr ',' '\n' | grep -c '[a-z]' || echo 1)
+    ok "Caddyfile обновлён (доменов: ${dom_count}, пользователей: $(get_users | wc -l))"
+}
+
 # ─── Caddyfile ───────────────────────────────────────────────
 write_caddyfile() {
     mkdir -p "$CADDY_DIR" "$WEBROOT" "$LOG_DIR"
@@ -953,6 +1029,84 @@ prompt_params() {
     load_users
     echo "${first_user}:${first_pass}" > "$USERS_FILE"
     chmod 600 "$USERS_FILE"
+}
+
+
+# ─── УПРАВЛЕНИЕ ДОМЕНАМИ ─────────────────────────────────────
+cmd_domains() {
+    load_config
+
+    while true; do
+        hr
+        echo -e "${BOLD}  Управление доменами${RESET}"
+        hr
+
+        local current_domains="${DOMAINS:-${DOMAIN:-}}"
+        echo -e "  ${BOLD}Текущие домены:${RESET}"
+        local i=1
+        IFS=',' read -ra dlist <<< "$current_domains"
+        for d in "${dlist[@]}"; do
+            d="${d// /}"
+            [[ -n "$d" ]] && echo -e "  ${i}. ${CYAN}${d}${RESET}" && ((i++))
+        done
+        echo
+        echo -e "  ${BOLD}1)${RESET} Добавить домен"
+        echo -e "  ${BOLD}2)${RESET} Удалить домен"
+        echo -e "  ${BOLD}0)${RESET} Назад"
+        hr
+        echo -ne "${CYAN}Выбор: ${RESET}"
+        read -r choice; echo
+
+        case "$choice" in
+            1)
+                echo -ne "${CYAN}Новый домен: ${RESET}"
+                read -r new_dom
+                if [[ ! "$new_dom" =~ ^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$ ]]; then
+                    err "Неверный формат домена"
+                    continue
+                fi
+                check_domain "$new_dom"
+                if [[ -z "$DOMAINS" ]]; then
+                    DOMAINS="${DOMAIN:-}"
+                fi
+                DOMAINS="${DOMAINS},${new_dom}"
+                # Убираем ведущую запятую
+                DOMAINS="${DOMAINS#,}"
+                save_config
+                backup_config
+                write_caddyfile_multi
+                systemctl reload caddy 2>/dev/null || systemctl restart caddy
+                ok "Домен $new_dom добавлен"
+                tg_send "🌐 <b>Добавлен домен</b>: <code>${new_dom}</code>"
+                ;;
+            2)
+                echo -ne "${CYAN}Номер домена для удаления: ${RESET}"
+                read -r del_idx
+                local new_domains=""
+                local j=1
+                IFS=',' read -ra dlist2 <<< "$current_domains"
+                for d in "${dlist2[@]}"; do
+                    d="${d// /}"
+                    [[ -z "$d" ]] && continue
+                    if [[ "$j" != "$del_idx" ]]; then
+                        new_domains="${new_domains},${d}"
+                    fi
+                    ((j++))
+                done
+                DOMAINS="${new_domains#,}"
+                DOMAIN=$(echo "$DOMAINS" | cut -d',' -f1)
+                save_config
+                backup_config
+                write_caddyfile_multi
+                systemctl reload caddy 2>/dev/null || systemctl restart caddy
+                ok "Домен удалён"
+                ;;
+            0) break ;;
+            *) warn "Неверный выбор" ;;
+        esac
+
+        echo -ne "${YELLOW}Enter для продолжения...${RESET}"; read -r
+    done
 }
 
 # ─── УПРАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯМИ ────────────────────────────────
@@ -1225,6 +1379,119 @@ check_cert() {
     fi
 }
 
+
+# ══════════════════════════════════════════════════════════════
+#   SELF-UPDATE СКРИПТА
+# ══════════════════════════════════════════════════════════════
+
+cmd_self_update() {
+    hr
+    echo -e "${BOLD}  Обновление скрипта NaiveProxy Manager${RESET}"
+    hr
+
+    info "Текущая версия: ${BOLD}v${VERSION}${RESET}"
+    info "Проверяю последнюю версию на GitHub..."
+
+    # Получаем последнюю версию через GitHub API
+    local latest_ver
+    latest_ver=$(curl -s --max-time 10 "$GITHUB_API" 2>/dev/null         | grep '"tag_name"'         | grep -oP '"\K[^"]+'         | head -1         | tr -d 'v' || echo "")
+
+    if [[ -z "$latest_ver" ]]; then
+        # Fallback: читаем VERSION из raw скрипта
+        latest_ver=$(curl -s --max-time 10 "$GITHUB_RAW" 2>/dev/null             | grep '^VERSION='             | grep -oP '"\K[^"]+' || echo "")
+    fi
+
+    if [[ -z "$latest_ver" ]]; then
+        err "Не удалось получить версию с GitHub. Проверь интернет."
+        return 1
+    fi
+
+    info "Последняя версия: ${BOLD}v${latest_ver}${RESET}"
+
+    if [[ "$latest_ver" == "$VERSION" ]]; then
+        ok "У тебя уже последняя версия v${VERSION}"
+        return 0
+    fi
+
+    echo
+    echo -e "  ${YELLOW}Доступно обновление: v${VERSION} → v${latest_ver}${RESET}"
+    echo -ne "${CYAN}Обновить? [Y/n]: ${RESET}"
+    read -r ans
+    [[ "${ans,,}" == "n" ]] && return 0
+
+    # Скачиваем новую версию во временный файл
+    local tmp_script
+    tmp_script=$(mktemp /tmp/naiveproxy_update_XXXXXX.sh)
+
+    info "Скачиваю v${latest_ver}..."
+    if ! curl -fsSL --max-time 60 "$GITHUB_RAW" -o "$tmp_script" 2>/dev/null; then
+        err "Ошибка загрузки скрипта"
+        rm -f "$tmp_script"
+        return 1
+    fi
+
+    # Проверяем что скачали валидный bash скрипт
+    if ! bash -n "$tmp_script" 2>/dev/null; then
+        err "Скачанный скрипт содержит ошибки синтаксиса! Отменяю обновление."
+        rm -f "$tmp_script"
+        return 1
+    fi
+
+    # Проверяем что это действительно наш скрипт
+    if ! grep -q "NaiveProxy Manager" "$tmp_script" 2>/dev/null; then
+        err "Скачанный файл не является NaiveProxy Manager. Отменяю."
+        rm -f "$tmp_script"
+        return 1
+    fi
+
+    # Определяем куда установлен скрипт
+    local current_script
+    current_script=$(realpath "$0" 2>/dev/null || echo "")
+    if [[ -z "$current_script" || "$current_script" == /dev/fd/* || "$current_script" == /proc/* ]]; then
+        current_script="$SCRIPT_PATH"
+    fi
+
+    # Бэкап текущей версии
+    local backup_path="${current_script}.v${VERSION}.bak"
+    cp "$current_script" "$backup_path" 2>/dev/null || true
+    ok "Бэкап текущей версии: $backup_path"
+
+    # Устанавливаем новую версию
+    chmod +x "$tmp_script"
+    mv "$tmp_script" "$current_script"
+    chmod +x "$current_script"
+
+    # Обновляем в /usr/local/bin если там другое место
+    if [[ "$current_script" != "$SCRIPT_PATH" ]]; then
+        cp "$current_script" "$SCRIPT_PATH" 2>/dev/null || true
+        chmod +x "$SCRIPT_PATH" 2>/dev/null || true
+    fi
+
+    ok "Скрипт обновлён: v${VERSION} → v${latest_ver}"
+    tg_send "🔄 <b>NaiveProxy Manager обновлён</b>
+📦 Было: <code>v${VERSION}</code>
+📦 Стало: <code>v${latest_ver}</code>
+🕐 $(date '+%Y-%m-%d %H:%M:%S')"
+
+    echo
+    info "Перезапускаю обновлённый скрипт..."
+    sleep 1
+    exec bash "$current_script"
+}
+
+# ── Тихая проверка обновлений при запуске ─────────────────────
+check_update_available() {
+    # Запускаем в фоне чтобы не тормозить старт
+    (
+        local latest_ver
+        latest_ver=$(curl -s --max-time 5 "$GITHUB_RAW" 2>/dev/null             | grep '^VERSION='             | grep -oP '"\K[^"]+' || echo "")
+        if [[ -n "$latest_ver" && "$latest_ver" != "$VERSION" ]]; then
+            echo -e "\n  ${YELLOW}⬆  Доступно обновление скрипта: v${VERSION} → v${latest_ver}${RESET}"
+            echo -e "  ${YELLOW}   Меню → 13) Обновить скрипт${RESET}\n"
+        fi
+    ) &
+}
+
 # ─── СТАТУС ──────────────────────────────────────────────────
 cmd_status() {
     hr
@@ -1341,18 +1608,20 @@ show_menu() {
     echo -e "   ${BOLD}2)${RESET}  Статус"
     echo -e "   ${BOLD}3)${RESET}  Клиентский конфиг"
     echo -e "   ${BOLD}4)${RESET}  Управление пользователями"
-    echo -e "   ${BOLD}5)${RESET}  Мониторинг и статистика"
-    echo -e "   ${BOLD}6)${RESET}  Настройка Telegram"
-    echo -e "   ${BOLD}7)${RESET}  Перезапустить Caddy"
-    echo -e "   ${BOLD}8)${RESET}  Обновить Caddy"
-    echo -e "   ${BOLD}9)${RESET}  Логи"
-    echo -e "   ${BOLD}10)${RESET} Удалить NaiveProxy"
+    echo -e "   ${BOLD}5)${RESET}  🌐 Управление доменами"
+    echo -e "   ${BOLD}6)${RESET}  Мониторинг и статистика"
+    echo -e "   ${BOLD}7)${RESET}  Настройка Telegram"
+    echo -e "   ${BOLD}8)${RESET}  Перезапустить Caddy"
+    echo -e "   ${BOLD}9)${RESET}  Обновить Caddy"
+    echo -e "   ${BOLD}10)${RESET} Логи"
+    echo -e "   ${BOLD}11)${RESET} Удалить NaiveProxy"
     echo -e "   ──────────────────────────"
-    echo -e "   ${BOLD}11)${RESET} 🔒 SSH Hardening"
-    echo -e "   ${BOLD}12)${RESET} 🔄 Обновить систему"
+    echo -e "   ${BOLD}12)${RESET} 🔒 SSH Hardening"
+    echo -e "   ${BOLD}13)${RESET} 🔄 Обновить систему"
+    echo -e "   ${BOLD}14)${RESET} ⬆️  Обновить скрипт"
     echo -e "   ${BOLD}0)${RESET}  Выход"
     hr
-    echo -ne "${CYAN}Выбор [0-12]: ${RESET}"
+    echo -ne "${CYAN}Выбор [0-14]: ${RESET}"
 }
 
 # ─── MAIN ────────────────────────────────────────────────────
@@ -1375,13 +1644,19 @@ main() {
             tg-stats)      tg_send_stats; ok "Отправлено" ;;
             ssh-hardening) cmd_ssh_hardening ;;
             sysupdate)     cmd_sysupdate ;;
-            cert)          load_config; check_cert "${DOMAIN:-}" ;;
+            cert)        load_config; check_cert "${DOMAIN:-}" ;;
+            domains)     load_config; cmd_domains ;;
+            self-update) load_config; cmd_self_update ;;
+            version)     echo "NaiveProxy Manager v${VERSION}" ;;
             *) err "Неизвестная команда: $1"
-               echo "Доступные: install status config restart update remove logs monitor users tg-stats ssh-hardening sysupdate cert"
+               echo "Доступные: install status config restart update remove logs monitor users tg-stats ssh-hardening sysupdate cert domains self-update version"
                exit 1 ;;
         esac
         exit 0
     fi
+
+    # Тихая проверка обновлений в фоне
+    check_update_available
 
     while true; do
         show_menu
@@ -1392,14 +1667,16 @@ main() {
             2)  cmd_status ;;
             3)  print_client_config ;;
             4)  cmd_users ;;
-            5)  cmd_monitor ;;
-            6)  setup_telegram ;;
-            7)  cmd_restart ;;
-            8)  cmd_update ;;
-            9)  cmd_logs ;;
-            10) cmd_remove ;;
-            11) cmd_ssh_hardening ;;
-            12) cmd_sysupdate ;;
+            5)  cmd_domains ;;
+            6)  cmd_monitor ;;
+            7)  setup_telegram ;;
+            8)  cmd_restart ;;
+            9)  cmd_update ;;
+            10) cmd_logs ;;
+            11) cmd_remove ;;
+            12) cmd_ssh_hardening ;;
+            13) cmd_sysupdate ;;
+            14) cmd_self_update ;;
             0)  echo -e "${GREEN}Пока!${RESET}"; exit 0 ;;
             *)  warn "Неверный выбор" ;;
         esac

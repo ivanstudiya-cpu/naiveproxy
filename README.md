@@ -7,7 +7,7 @@
 
 ---
 
-[![Version](https://img.shields.io/badge/version-3.2.0-D4A017?style=for-the-badge&logo=github)](https://github.com/ivanstudiya-cpu/naiveproxy/releases)
+[![Version](https://img.shields.io/badge/version-3.3.0-D4A017?style=for-the-badge&logo=github)](https://github.com/ivanstudiya-cpu/naiveproxy/releases)
 [![Bash](https://img.shields.io/badge/bash-5.0+-4EAA25?style=for-the-badge&logo=gnubash&logoColor=white)](https://www.gnu.org/software/bash/)
 [![Caddy](https://img.shields.io/badge/Caddy-2.x-00ADD8?style=for-the-badge&logo=caddy&logoColor=white)](https://caddyserver.com)
 [![Ubuntu](https://img.shields.io/badge/Ubuntu-20.04%2B-E95420?style=for-the-badge&logo=ubuntu&logoColor=white)](https://ubuntu.com)
@@ -145,7 +145,7 @@ sudo bash naiveproxy.sh
 
 ```
 ──────────────────────────────────────────
-   NaiveProxy Manager v3.2.0
+   NaiveProxy Manager v3.3.0
    Статус: ● работает  |  Домен: proxy.example.com
    Telegram: подключён  |  Юзеров: 3  |  SSH порт: 52847
 ──────────────────────────────────────────
@@ -153,15 +153,18 @@ sudo bash naiveproxy.sh
    2)  Статус
    3)  Клиентский конфиг
    4)  Управление пользователями
-   5)  Мониторинг и статистика
-   6)  Настройка Telegram
+   5)  🌐 Управление доменами
+   6)  Мониторинг и статистика
+   7)  Настройка Telegram
    7)  Перезапустить Caddy
    8)  Обновить Caddy
    9)  Логи
-   10) Удалить NaiveProxy
+   10) Логи
+   11) Удалить NaiveProxy
    ──────────────────────────
-   11) 🔒 SSH Hardening
-   12) 🔄 Обновить систему
+   12) 🔒 SSH Hardening
+   13) 🔄 Обновить систему
+   14) ⬆️  Обновить скрипт
    0)  Выход
 ──────────────────────────────────────────
 ```
@@ -182,9 +185,52 @@ sudo bash naiveproxy.sh tg-stats       # Статистика в Telegram
 sudo bash naiveproxy.sh ssh-hardening  # SSH Hardening
 sudo bash naiveproxy.sh sysupdate      # Обновление системы
 sudo bash naiveproxy.sh remove         # Удалить всё
+sudo bash naiveproxy.sh domains        # Управление доменами
+sudo bash naiveproxy.sh self-update    # Обновить скрипт
+sudo bash naiveproxy.sh version        # Показать версию
 ```
 
 ---
+
+
+---
+
+## 🌐 Несколько доменов
+
+```bash
+sudo bash naiveproxy.sh domains
+```
+
+```
+  1) Список доменов
+  2) Добавить домен     ← проверяет DNS, получает TLS, перезагружает Caddy
+  3) Удалить домен
+```
+
+Caddy автоматически получает сертификат для каждого нового домена. Все пользователи работают на всех доменах — полезно для резервирования или разных регионов.
+
+---
+
+## ⬆️ Автообновление скрипта
+
+При запуске меню скрипт **тихо в фоне** проверяет наличие новой версии на GitHub и показывает подсказку:
+
+```
+  ⬆  Доступно обновление скрипта: v3.3.0 → v3.4.0
+     Меню → 14) Обновить скрипт
+```
+
+Обновить вручную:
+```bash
+sudo bash naiveproxy.sh self-update
+```
+
+Что происходит при обновлении:
+1. Проверяет версию через GitHub API
+2. Скачивает новый скрипт
+3. Проверяет синтаксис (`bash -n`) — не установит сломанную версию
+4. Делает бэкап текущей версии (`naiveproxy.sh.v3.3.0.bak`)
+5. Устанавливает новую версию и перезапускается
 
 ## 🔒 SSH Hardening
 
@@ -522,6 +568,12 @@ sudo bash naiveproxy.sh users  # → 2) Добавить
 ---
 
 ## 📜 Changelog
+
+### v3.3.0
+- ✨ Self-update — обновление скрипта прямо из меню
+- ✨ Фоновая проверка новых версий при запуске
+- ✨ Управление несколькими доменами (multi-domain Caddyfile)
+- 🆕 CLI команды: `self-update`, `domains`, `version`
 
 ### v3.2.0
 - ✨ Проверка TLS сертификата — срок, дней до истечения, цвет
