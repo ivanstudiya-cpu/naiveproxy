@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-#   NaiveProxy Manager v3.3.0 — by ivanstudiya-cpu
+#   NaiveProxy Manager v3.5.0 — by ivanstudiya-cpu
 #   Стек: Caddy 2 + klzgrad/forwardproxy@naive
 #   ОС: Ubuntu 20.04 / 22.04 / 24.04
 #   GitHub: https://github.com/ivanstudiya-cpu/naiveproxy
@@ -8,7 +8,7 @@
 
 set -euo pipefail
 
-VERSION="3.3.0"
+VERSION="3.5.0"
 GITHUB_RAW="https://raw.githubusercontent.com/ivanstudiya-cpu/naiveproxy/main/naiveproxy.sh"
 GITHUB_API="https://api.github.com/repos/ivanstudiya-cpu/naiveproxy/releases/latest"
 SCRIPT_PATH="/usr/local/bin/naiveproxy.sh"
@@ -451,11 +451,12 @@ get_users() {
 tg_send() {
     local message="$1"
     [[ -z "${TG_TOKEN:-}" || -z "${TG_CHAT_ID:-}" ]] && return 0
+    # Используем --data-urlencode для безопасной передачи спецсимволов
     curl -s --max-time 10 --retry 2 --retry-delay 3 \
         -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
-        -d chat_id="${TG_CHAT_ID}" \
-        -d parse_mode="HTML" \
-        -d text="${message}" \
+        --data-urlencode "chat_id=${TG_CHAT_ID}" \
+        --data-urlencode "parse_mode=HTML" \
+        --data-urlencode "text=${message}" \
         >/dev/null 2>&1 || true
 }
 
@@ -602,9 +603,9 @@ tg_send() {
     [[ -z "${TG_TOKEN:-}" || -z "${TG_CHAT_ID:-}" ]] && return
     curl -s --max-time 10 --retry 2 \
         -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
-        -d chat_id="${TG_CHAT_ID}" \
-        -d parse_mode="HTML" \
-        -d text="${msg}" >/dev/null 2>&1 || true
+        -H "Content-Type: application/json" \
+        -d "{"chat_id":"${TG_CHAT_ID}","parse_mode":"HTML","text":"${msg}"}" \
+        >/dev/null 2>&1 || true
 }
 
 FLAG="/run/naiveproxy_was_down"
@@ -745,13 +746,7 @@ build_caddy() {
 write_caddyfile_multi() {
     mkdir -p "$CADDY_DIR" "$WEBROOT" "$LOG_DIR"
 
-    cat > "$WEBROOT/index.html" <<'HTMLEOF'
-<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="UTF-8"><title>Welcome</title></head>
-<body><h1>It works!</h1></body>
-</html>
-HTMLEOF
+    install_camouflage_page
 
     # Собираем auth блоки
     local auth_blocks=""
@@ -812,17 +807,231 @@ EOF
     ok "Caddyfile обновлён (доменов: ${dom_count}, пользователей: $(get_users | wc -l))"
 }
 
+
+# ─── КАМУФЛЯЖНАЯ СТРАНИЦА ────────────────────────────────────────
+install_camouflage_page() {
+    mkdir -p "$WEBROOT"
+
+    cat > "$WEBROOT/index.html" << 'CAMOUFLAGE_EOF'
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="DevStack — Technical notes on Linux, networking, security and open source infrastructure.">
+<title>DevStack — Linux & Infrastructure Notes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#080B0F;--bg2:#0D1117;--bg3:#161B22;--border:#21262D;--gold:#D4A017;--gold2:#F0C040;--text:#E6EDF3;--text-dim:#7D8590;--text-muted:#484F58;--green:#3FB950;--blue:#58A6FF;--red:#F85149;--tag-bg:#1F2937}
+*{margin:0;padding:0;box-sizing:border-box}html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:'Syne',sans-serif;font-size:16px;line-height:1.6;min-height:100vh}
+body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.03) 2px,rgba(0,0,0,.03) 4px);pointer-events:none;z-index:9999}
+code,pre,.mono{font-family:'JetBrains Mono',monospace}
+a{color:var(--blue);text-decoration:none}a:hover{color:var(--gold2)}
+header{border-bottom:1px solid var(--border);background:var(--bg2);position:sticky;top:0;z-index:100;backdrop-filter:blur(8px)}
+.header-inner{max-width:1100px;margin:0 auto;padding:0 24px;height:60px;display:flex;align-items:center;justify-content:space-between}
+.logo{display:flex;align-items:center;gap:10px;text-decoration:none}
+.logo-icon{width:32px;height:32px;background:var(--gold);border-radius:6px;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-weight:700;font-size:14px;color:#000}
+.logo-text{font-size:18px;font-weight:800;color:var(--text);letter-spacing:-.5px}
+.logo-text span{color:var(--gold)}
+nav{display:flex;gap:28px;align-items:center}
+nav a{font-size:14px;font-weight:600;color:var(--text-dim);letter-spacing:.3px;transition:color .2s}
+nav a:hover{color:var(--text)}
+.nav-rss{display:flex;align-items:center;gap:6px;padding:6px 14px;border:1px solid var(--border);border-radius:6px;font-size:13px;color:var(--text-dim)!important;transition:border-color .2s,color .2s!important}
+.nav-rss:hover{border-color:var(--gold)!important;color:var(--gold)!important}
+.hero{border-bottom:1px solid var(--border);padding:64px 24px 48px;position:relative;overflow:hidden}
+.hero::after{content:'';position:absolute;top:-80px;right:-80px;width:400px;height:400px;background:radial-gradient(circle,rgba(212,160,23,.06) 0%,transparent 70%);pointer-events:none}
+.hero-inner{max-width:1100px;margin:0 auto}
+.hero-eyebrow{display:inline-flex;align-items:center;gap:8px;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--gold);margin-bottom:20px;letter-spacing:1px}
+.hero-eyebrow::before{content:'';display:inline-block;width:24px;height:1px;background:var(--gold)}
+.hero h1{font-size:clamp(32px,5vw,52px);font-weight:800;line-height:1.1;letter-spacing:-1.5px;max-width:700px;margin-bottom:20px}
+.hero h1 em{font-style:normal;color:var(--gold)}
+.hero p{font-size:17px;color:var(--text-dim);max-width:540px;line-height:1.7}
+.main{max-width:1100px;margin:0 auto;padding:48px 24px;display:grid;grid-template-columns:1fr 300px;gap:48px}
+.featured{border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:32px;background:var(--bg2);transition:border-color .2s}
+.featured:hover{border-color:var(--gold)}
+.featured-img{height:220px;background:linear-gradient(135deg,rgba(212,160,23,.15) 0%,transparent 60%),linear-gradient(225deg,rgba(88,166,255,.08) 0%,transparent 50%),var(--bg3);display:flex;align-items:center;justify-content:center;font-size:72px;position:relative;overflow:hidden}
+.featured-img::before{content:'';position:absolute;inset:0;background:repeating-linear-gradient(45deg,transparent,transparent 20px,rgba(212,160,23,.02) 20px,rgba(212,160,23,.02) 40px)}
+.featured-badge{position:absolute;top:16px;left:16px;background:var(--gold);color:#000;font-size:11px;font-weight:700;padding:4px 10px;border-radius:4px;letter-spacing:1px;font-family:'JetBrains Mono',monospace}
+.featured-body{padding:28px}
+.post-meta{display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+.tag{background:var(--tag-bg);color:var(--text-dim);font-size:11px;font-family:'JetBrains Mono',monospace;padding:3px 8px;border-radius:4px;border:1px solid var(--border)}
+.tag.linux{color:var(--green);border-color:#3fb95040}
+.tag.security{color:var(--red);border-color:#f8514940}
+.tag.networking{color:var(--blue);border-color:#58a6ff40}
+.tag.caddy{color:var(--gold);border-color:#d4a01740}
+.post-date{font-size:12px;font-family:'JetBrains Mono',monospace;color:var(--text-muted);margin-left:auto}
+.featured-body h2{font-size:24px;font-weight:800;letter-spacing:-.5px;margin-bottom:10px;line-height:1.25}
+.featured-body h2 a{color:var(--text)}
+.featured-body h2 a:hover{color:var(--gold)}
+.featured-body p{color:var(--text-dim);font-size:15px;line-height:1.7;margin-bottom:20px}
+.read-more{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--gold);font-family:'JetBrains Mono',monospace;transition:all .2s}
+.read-more:hover{color:var(--gold2);gap:12px}
+.posts-label{font-size:11px;font-family:'JetBrains Mono',monospace;color:var(--text-muted);letter-spacing:2px;margin-bottom:16px;display:flex;align-items:center;gap:12px}
+.posts-label::after{content:'';flex:1;height:1px;background:var(--border)}
+.post-card{border:1px solid var(--border);border-radius:10px;padding:20px 22px;margin-bottom:12px;background:var(--bg2);display:grid;grid-template-columns:1fr auto;gap:12px;align-items:start;transition:border-color .2s,background .2s;cursor:pointer}
+.post-card:hover{background:var(--bg3)}
+.post-card h3{font-size:16px;font-weight:600;letter-spacing:-.3px;margin-bottom:6px;line-height:1.3}
+.post-card h3 a{color:var(--text)}
+.post-card h3 a:hover{color:var(--gold)}
+.post-card p{font-size:13px;color:var(--text-dim);line-height:1.55}
+.post-card-right{text-align:right;white-space:nowrap}
+.read-time{font-size:11px;font-family:'JetBrains Mono',monospace;color:var(--text-muted);display:block;margin-top:8px}
+.sidebar{display:flex;flex-direction:column;gap:24px}
+.widget{border:1px solid var(--border);border-radius:10px;background:var(--bg2);overflow:hidden}
+.widget-header{padding:14px 18px;border-bottom:1px solid var(--border);font-size:11px;font-family:'JetBrains Mono',monospace;color:var(--text-muted);letter-spacing:2px;display:flex;align-items:center;gap:8px}
+.widget-header::before{content:'';width:6px;height:6px;background:var(--gold);border-radius:50%}
+.widget-body{padding:18px}
+.about-avatar{width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,var(--gold) 0%,#8B5E00 100%);display:flex;align-items:center;justify-content:center;font-size:22px;margin-bottom:14px;border:2px solid var(--border)}
+.about-name{font-size:15px;font-weight:700;margin-bottom:4px}
+.about-bio{font-size:13px;color:var(--text-dim);line-height:1.6;margin-bottom:14px}
+.about-links{display:flex;gap:10px;flex-wrap:wrap}
+.about-link{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-family:'JetBrains Mono',monospace;color:var(--text-dim);border:1px solid var(--border);padding:5px 10px;border-radius:6px;transition:border-color .2s,color .2s}
+.about-link:hover{border-color:var(--gold);color:var(--gold)}
+.tags-cloud{display:flex;flex-wrap:wrap;gap:8px}
+.tag-link{font-size:12px;font-family:'JetBrains Mono',monospace;padding:5px 10px;border-radius:6px;border:1px solid var(--border);color:var(--text-dim);transition:all .2s}
+.tag-link:hover{border-color:var(--gold);color:var(--gold);background:rgba(212,160,23,.05)}
+.terminal{background:var(--bg);border-radius:8px;overflow:hidden;font-family:'JetBrains Mono',monospace;font-size:12px}
+.terminal-bar{background:var(--bg3);padding:8px 12px;display:flex;align-items:center;gap:6px;border-bottom:1px solid var(--border)}
+.terminal-dot{width:10px;height:10px;border-radius:50%}
+.terminal-body{padding:14px;color:var(--text-dim);line-height:1.9}
+.terminal-body .prompt{color:var(--green)}
+.terminal-body .cmd{color:var(--text)}
+.terminal-body .out{color:var(--text-muted)}
+.terminal-body .hl{color:var(--gold)}
+.stats-bar{border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--bg2);padding:16px 24px}
+.stats-inner{max-width:1100px;margin:0 auto;display:flex;gap:40px;flex-wrap:wrap}
+.stat{display:flex;align-items:center;gap:10px}
+.stat-num{font-size:22px;font-weight:800;color:var(--gold);letter-spacing:-1px;font-family:'JetBrains Mono',monospace}
+.stat-label{font-size:12px;color:var(--text-muted);line-height:1.3}
+footer{border-top:1px solid var(--border);padding:32px 24px;background:var(--bg2)}
+.footer-inner{max-width:1100px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px}
+.footer-left{font-size:13px;color:var(--text-muted);font-family:'JetBrains Mono',monospace}
+.footer-left span{color:var(--gold)}
+.footer-links{display:flex;gap:20px}
+.footer-links a{font-size:13px;color:var(--text-muted);transition:color .2s}
+.footer-links a:hover{color:var(--gold)}
+@keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+.cursor{display:inline-block;width:8px;height:14px;background:var(--green);vertical-align:middle;animation:blink 1s step-end infinite;border-radius:1px}
+.hero{animation:fadeUp .5s ease both}
+.featured{animation:fadeUp .5s .1s ease both}
+@media(max-width:768px){.main{grid-template-columns:1fr}.sidebar{display:none}nav a:not(.nav-rss){display:none}}
+</style>
+</head>
+<body>
+<header>
+  <div class="header-inner">
+    <a href="/" class="logo"><div class="logo-icon">&gt;_</div><span class="logo-text">Dev<span>Stack</span></span></a>
+    <nav>
+      <a href="#">Linux</a><a href="#">Security</a><a href="#">Networking</a><a href="#">Tools</a>
+      <a href="#" class="nav-rss">RSS</a>
+    </nav>
+  </div>
+</header>
+<section class="hero">
+  <div class="hero-inner">
+    <div class="hero-eyebrow">TECHNICAL NOTES</div>
+    <h1>Linux, Networking<br>&amp; <em>Infrastructure</em></h1>
+    <p>Practical notes on server administration, open source tooling, and building reliable systems. No fluff — just working code and real-world configs.</p>
+  </div>
+</section>
+<div class="stats-bar">
+  <div class="stats-inner">
+    <div class="stat"><span class="stat-num">47</span><span class="stat-label">articles<br>published</span></div>
+    <div class="stat"><span class="stat-num">12k</span><span class="stat-label">monthly<br>readers</span></div>
+    <div class="stat"><span class="stat-num">3y</span><span class="stat-label">writing<br>about Linux</span></div>
+    <div class="stat"><span class="stat-num mono">100%</span><span class="stat-label">self-hosted<br>infrastructure</span></div>
+  </div>
+</div>
+<div class="main">
+  <main>
+    <article class="featured">
+      <div class="featured-img">🔐<span class="featured-badge">FEATURED</span></div>
+      <div class="featured-body">
+        <div class="post-meta"><span class="tag security">security</span><span class="tag linux">linux</span><span class="tag networking">networking</span><span class="post-date mono">Apr 21, 2026</span></div>
+        <h2><a href="#">Hardening a Fresh Ubuntu VPS in 2026: The Complete Checklist</a></h2>
+        <p>Every time I spin up a new VPS it gets thousands of SSH brute-force attempts within hours. Here's the exact sequence I run — from changing the SSH port and setting up Fail2Ban to configuring unattended security updates and locking down UFW.</p>
+        <a href="#" class="read-more">Read article →</a>
+      </div>
+    </article>
+    <div class="posts-label">RECENT POSTS</div>
+    <article class="post-card">
+      <div><div class="post-meta"><span class="tag caddy">caddy</span><span class="tag networking">networking</span></div><h3><a href="#">Caddy 2 as a Reverse Proxy: Automatic TLS, HTTP/3 and Zero Config</a></h3><p>Forget manually managing Let's Encrypt certificates. Caddy does it all — including HTTP/3 via QUIC — with a ten-line config.</p></div>
+      <div class="post-card-right"><span class="post-date mono">Apr 14</span><span class="read-time">7 min</span></div>
+    </article>
+    <article class="post-card">
+      <div><div class="post-meta"><span class="tag linux">linux</span><span class="tag security">security</span></div><h3><a href="#">ED25519 vs RSA: Why You Should Migrate Your SSH Keys Today</a></h3><p>RSA-4096 is not broken, but ED25519 is smaller, faster, and safer against side-channel attacks. Here's how to migrate without locking yourself out.</p></div>
+      <div class="post-card-right"><span class="post-date mono">Apr 08</span><span class="read-time">5 min</span></div>
+    </article>
+    <article class="post-card">
+      <div><div class="post-meta"><span class="tag linux">linux</span></div><h3><a href="#">Systemd Timers vs Cron: A Practical Comparison for 2026</a></h3><p>Cron is simple and it works. Systemd timers are more powerful. I compared both for a production automation task — here's what I found.</p></div>
+      <div class="post-card-right"><span class="post-date mono">Mar 30</span><span class="read-time">6 min</span></div>
+    </article>
+    <article class="post-card">
+      <div><div class="post-meta"><span class="tag networking">networking</span><span class="tag security">security</span></div><h3><a href="#">UFW Deep Dive: Rules, Logging and Common Mistakes</a></h3><p>UFW is friendly but hides complexity. I cover rule ordering, default policies, logging levels, and the three mistakes that get people locked out of their own servers.</p></div>
+      <div class="post-card-right"><span class="post-date mono">Mar 22</span><span class="read-time">9 min</span></div>
+    </article>
+    <article class="post-card">
+      <div><div class="post-meta"><span class="tag linux">linux</span><span class="tag caddy">caddy</span></div><h3><a href="#">Building a Minimal Self-Hosted Stack: No Docker, No Kubernetes</a></h3><p>Not every project needs containers. A plain Ubuntu server with Caddy, systemd and a deploy script can run production workloads reliably with far less overhead.</p></div>
+      <div class="post-card-right"><span class="post-date mono">Mar 15</span><span class="read-time">11 min</span></div>
+    </article>
+  </main>
+  <aside class="sidebar">
+    <div class="widget">
+      <div class="widget-header">ABOUT</div>
+      <div class="widget-body">
+        <div class="about-avatar">👨‍💻</div>
+        <div class="about-name">Ivan Yu.</div>
+        <p class="about-bio">Sysadmin and open source enthusiast. Writing about Linux, networking and the infrastructure behind the web since 2021.</p>
+        <div class="about-links"><a href="#" class="about-link">⌂ GitHub</a><a href="#" class="about-link">✉ Contact</a></div>
+      </div>
+    </div>
+    <div class="widget">
+      <div class="widget-header">UPTIME</div>
+      <div class="widget-body" style="padding:0">
+        <div class="terminal">
+          <div class="terminal-bar"><div class="terminal-dot" style="background:#f85149"></div><div class="terminal-dot" style="background:#d4a017"></div><div class="terminal-dot" style="background:#3fb950"></div></div>
+          <div class="terminal-body">
+            <div><span class="prompt">$</span> <span class="cmd">uptime -p</span></div>
+            <div class="out">up <span class="hl">47 days</span>, 3 hours</div>
+            <div style="margin-top:8px"><span class="prompt">$</span> <span class="cmd">systemctl is-active caddy</span></div>
+            <div class="out" style="color:#3fb950">active</div>
+            <div style="margin-top:8px"><span class="prompt">$</span> <span class="cursor"></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="widget">
+      <div class="widget-header">TOPICS</div>
+      <div class="widget-body">
+        <div class="tags-cloud">
+          <a href="#" class="tag-link">linux</a><a href="#" class="tag-link">security</a><a href="#" class="tag-link">caddy</a><a href="#" class="tag-link">ssh</a><a href="#" class="tag-link">ufw</a><a href="#" class="tag-link">fail2ban</a><a href="#" class="tag-link">networking</a><a href="#" class="tag-link">systemd</a><a href="#" class="tag-link">tls</a><a href="#" class="tag-link">selfhosted</a><a href="#" class="tag-link">ubuntu</a><a href="#" class="tag-link">bash</a>
+        </div>
+      </div>
+    </div>
+  </aside>
+</div>
+<footer>
+  <div class="footer-inner">
+    <div class="footer-left"><span>&gt;_ DevStack</span> · Built with Caddy · © 2026</div>
+    <div class="footer-links"><a href="#">Archive</a><a href="#">RSS</a><a href="#">Privacy</a><a href="#">Contact</a></div>
+  </div>
+</footer>
+</body>
+</html>
+CAMOUFLAGE_EOF
+
+    chmod 644 "$WEBROOT/index.html"
+    ok "Камуфляжная страница установлена → $WEBROOT/index.html"
+}
+
 # ─── Caddyfile ───────────────────────────────────────────────
 write_caddyfile() {
     mkdir -p "$CADDY_DIR" "$WEBROOT" "$LOG_DIR"
 
-    cat > "$WEBROOT/index.html" <<'HTMLEOF'
-<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="UTF-8"><title>Welcome</title></head>
-<body><h1>It works!</h1></body>
-</html>
-HTMLEOF
+    install_camouflage_page
 
     # Собираем блоки basic_auth
     local auth_blocks=""
@@ -1152,8 +1361,12 @@ cmd_users() {
                 if [[ -z "$new_pass" ]]; then
                     new_pass=$(openssl rand -base64 16 | tr -dc 'a-zA-Z0-9' | head -c 20)
                     info "Сгенерирован пароль: $new_pass"
+                elif [[ "$new_pass" == *":"* ]]; then
+                    err "Пароль не может содержать символ ':'"
+                    continue
                 fi
-                echo "${new_user}:${new_pass}" >> "$USERS_FILE"
+                printf '%s:%s
+' "${new_user}" "${new_pass}" >> "$USERS_FILE"
                 backup_config
                 write_caddyfile
                 systemctl reload caddy 2>/dev/null || systemctl restart caddy
@@ -1169,7 +1382,8 @@ cmd_users() {
                     continue
                 fi
                 backup_config
-                sed -i "/^${del_user}:/d" "$USERS_FILE"
+                # grep -F для фиксированной строки — защита от regex в имени
+                grep -vF "${del_user}:" "$USERS_FILE" > "${USERS_FILE}.tmp" && mv "${USERS_FILE}.tmp" "$USERS_FILE" || true
                 write_caddyfile
                 systemctl reload caddy 2>/dev/null || systemctl restart caddy
                 ok "Пользователь $del_user удалён"
@@ -1185,9 +1399,22 @@ cmd_users() {
                 if [[ -z "$chg_pass" ]]; then
                     chg_pass=$(openssl rand -base64 16 | tr -dc 'a-zA-Z0-9' | head -c 20)
                     info "Сгенерирован пароль: $chg_pass"
+                elif [[ "$chg_pass" == *":"* ]]; then
+                    err "Пароль не может содержать символ ':'"; continue
                 fi
                 backup_config
-                sed -i "s/^${chg_user}:.*/${chg_user}:${chg_pass}/" "$USERS_FILE"
+                # Безопасная замена без sed regex
+                local tmp_users
+                tmp_users=$(mktemp)
+                while IFS=: read -r u p; do
+                    if [[ "$u" == "$chg_user" ]]; then
+                        printf '%s:%s
+' "$u" "$chg_pass"
+                    else
+                        printf '%s:%s
+' "$u" "$p"
+                    fi
+                done < "$USERS_FILE" > "$tmp_users" && mv "$tmp_users" "$USERS_FILE"
                 write_caddyfile
                 systemctl reload caddy 2>/dev/null || systemctl restart caddy
                 ok "Пароль $chg_user изменён"
@@ -1422,6 +1649,8 @@ cmd_self_update() {
     # Скачиваем новую версию во временный файл
     local tmp_script
     tmp_script=$(mktemp /tmp/naiveproxy_update_XXXXXX.sh)
+    # Cleanup при любом выходе из функции
+    trap 'rm -f "${tmp_script:-}" 2>/dev/null' RETURN
 
     info "Скачиваю v${latest_ver}..."
     if ! curl -fsSL --max-time 60 "$GITHUB_RAW" -o "$tmp_script" 2>/dev/null; then
@@ -1564,7 +1793,7 @@ cmd_remove() {
     systemctl stop caddy    2>/dev/null || true
     systemctl disable caddy 2>/dev/null || true
     rm -f "$CADDY_SERVICE" "$CADDY_BIN" "$CADDYFILE"
-    rm -rf "$CONFIG_DIR"
+    [[ -n "${CONFIG_DIR:-}" && "$CONFIG_DIR" != "/" ]] && rm -rf "$CONFIG_DIR"
     systemctl daemon-reload
 
     ufw delete allow 80/tcp  >/dev/null 2>&1 || true
@@ -1618,10 +1847,11 @@ show_menu() {
     echo -e "   ──────────────────────────"
     echo -e "   ${BOLD}12)${RESET} 🔒 SSH Hardening"
     echo -e "   ${BOLD}13)${RESET} 🔄 Обновить систему"
-    echo -e "   ${BOLD}14)${RESET} ⬆️  Обновить скрипт"
+    echo -e "   ${BOLD}14)${RESET} ⬆️  Обновить скрипт
+   ${BOLD}15)${RESET} 🎭 Обновить камуфляж"
     echo -e "   ${BOLD}0)${RESET}  Выход"
     hr
-    echo -ne "${CYAN}Выбор [0-14]: ${RESET}"
+    echo -ne "${CYAN}Выбор [0-15]: ${RESET}"
 }
 
 # ─── MAIN ────────────────────────────────────────────────────
@@ -1646,10 +1876,11 @@ main() {
             sysupdate)     cmd_sysupdate ;;
             cert)        load_config; check_cert "${DOMAIN:-}" ;;
             domains)     load_config; cmd_domains ;;
-            self-update) load_config; cmd_self_update ;;
+            self-update)  load_config; cmd_self_update ;;
+            camouflage)   install_camouflage_page ;;
             version)     echo "NaiveProxy Manager v${VERSION}" ;;
             *) err "Неизвестная команда: $1"
-               echo "Доступные: install status config restart update remove logs monitor users tg-stats ssh-hardening sysupdate cert domains self-update version"
+               echo "Доступные: install status config restart update remove logs monitor users tg-stats ssh-hardening sysupdate cert domains self-update version camouflage"
                exit 1 ;;
         esac
         exit 0
@@ -1677,6 +1908,7 @@ main() {
             12) cmd_ssh_hardening ;;
             13) cmd_sysupdate ;;
             14) cmd_self_update ;;
+            15) install_camouflage_page && ok "Камуфляж обновлён" ;;
             0)  echo -e "${GREEN}Пока!${RESET}"; exit 0 ;;
             *)  warn "Неверный выбор" ;;
         esac
