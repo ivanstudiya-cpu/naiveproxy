@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-#   NaiveProxy Manager v3.6.0 — by ivanstudiya-cpu
+#   NaiveProxy Manager v3.7.0 — by ivanstudiya-cpu
 #   Стек: Caddy 2 + klzgrad/forwardproxy@naive
 #   ОС: Ubuntu 20.04 / 22.04 / 24.04
 #   GitHub: https://github.com/ivanstudiya-cpu/naiveproxy
@@ -8,7 +8,7 @@
 
 set -euo pipefail
 
-VERSION="3.6.0"
+VERSION="3.7.0"
 GITHUB_RAW="https://raw.githubusercontent.com/ivanstudiya-cpu/naiveproxy/main/naiveproxy.sh"
 GITHUB_API="https://api.github.com/repos/ivanstudiya-cpu/naiveproxy/releases/latest"
 SCRIPT_PATH="/usr/local/bin/naiveproxy.sh"
@@ -787,16 +787,13 @@ write_caddyfile_multi() {
     # Глобальный блок
     cat > "$CADDYFILE" <<EOF
 {
-    order forward_proxy before file_server
-    servers :443 {
-        protocols h1 h2 h3
+  order forward_proxy before file_server
+  log {
+    output file ${LOG_DIR}/access.log {
+      roll_size 50mb
+      roll_keep 3
     }
-    log {
-        output file ${LOG_DIR}/access.log {
-            roll_size 50mb
-            roll_keep 3
-        }
-    }
+  }
 }
 
 EOF
@@ -812,15 +809,15 @@ EOF
 ${dom}:443 {
     tls ${EMAIL}
 
-    forward_proxy {
-${auth_blocks}        hide_ip
-        hide_via
-        probe_resistance
-    }
+  forward_proxy {
+${auth_blocks}    hide_ip
+    hide_via
+    probe_resistance
+  }
 
-    file_server {
-        root ${WEBROOT}
-    }
+  file_server {
+    root ${WEBROOT}
+  }
 
     log {
         output file ${LOG_DIR}/naive_${dom//./_}.log {
@@ -1083,8 +1080,8 @@ write_caddyfile() {
     }
 }
 
-${DOMAIN}:443 {
-    tls ${EMAIL}
+:443, ${DOMAIN} {
+  tls ${EMAIL}
 
     forward_proxy {
 ${auth_blocks}        hide_ip
