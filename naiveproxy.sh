@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-#   NaiveProxy Manager v3.7.0 — by ivanstudiya-cpu
+#   NaiveProxy Manager v3.8.0 — by ivanstudiya-cpu
 #   Стек: Caddy 2 + klzgrad/forwardproxy@naive
 #   ОС: Ubuntu 20.04 / 22.04 / 24.04
 #   GitHub: https://github.com/ivanstudiya-cpu/naiveproxy
@@ -8,7 +8,7 @@
 
 set -euo pipefail
 
-VERSION="3.7.0"
+VERSION="3.8.0"
 GITHUB_RAW="https://raw.githubusercontent.com/ivanstudiya-cpu/naiveproxy/main/naiveproxy.sh"
 GITHUB_API="https://api.github.com/repos/ivanstudiya-cpu/naiveproxy/releases/latest"
 SCRIPT_PATH="/usr/local/bin/naiveproxy.sh"
@@ -201,6 +201,13 @@ cmd_ssh_hardening() {
         chmod 600 "$auth_keys"
         [[ "$target_user" != "root" ]] && chown -R "${target_user}:${target_user}" "$ssh_dir"
 
+        # Авто-сохранение ключа в /etc/naiveproxy/
+        mkdir -p "$CONFIG_DIR"
+        cp "${ssh_dir}/id_ed25519_server"     "${CONFIG_DIR}/ssh_private_key"
+        cp "${ssh_dir}/id_ed25519_server.pub" "${CONFIG_DIR}/ssh_public_key"
+        chmod 600 "${CONFIG_DIR}/ssh_private_key"
+        ok "SSH ключ авто-сохранён: ${CONFIG_DIR}/ssh_private_key"
+
         echo
         echo -e "${RED}╔══════════════════════════════════════════════════════╗${RESET}"
         echo -e "${RED}║  ПРИВАТНЫЙ КЛЮЧ — СКОПИРУЙ И СОХРАНИ ПРЯМО СЕЙЧАС  ║${RESET}"
@@ -208,14 +215,27 @@ cmd_ssh_hardening() {
         cat "${ssh_dir}/id_ed25519_server"
         echo -e "${RED}══════════════════════════════════════════════════════${RESET}"
         echo
-        warn "Сохрани этот ключ в файл: id_naiveproxy (на своём компе)"
-        warn "Подключение: ssh -i id_naiveproxy -p [НОВЫЙ_ПОРТ] ${target_user}@$(curl -s4 --max-time 5 https://ifconfig.me 2>/dev/null || echo YOUR_IP)"
+
+        # Команда для скачивания ключа с сервера
+        local server_ip_tmp
+        server_ip_tmp=$(curl -s4 --max-time 5 https://ifconfig.me 2>/dev/null || echo YOUR_IP)
+        echo -e "  ${BOLD}Скачать ключ на свой компьютер:${RESET}"
+        echo -e "  ${CYAN}# Linux/macOS:${RESET}"
+        echo -e "  scp root@${server_ip_tmp}:${CONFIG_DIR}/ssh_private_key ~/.ssh/id_naiveproxy"
+        echo -e "  chmod 600 ~/.ssh/id_naiveproxy"
         echo
-        echo -ne "${YELLOW}Ты сохранил ключ? [yes]: ${RESET}"
+        echo -e "  ${CYAN}# Windows PowerShell:${RESET}"
+        echo -e "  scp root@${server_ip_tmp}:${CONFIG_DIR}/ssh_private_key \$HOME\.ssh\id_naiveproxy"
+        echo
+        warn "Подключение после hardening:"
+        echo -e "  ${CYAN}ssh -i ~/.ssh/id_naiveproxy -p [НОВЫЙ_ПОРТ] ${target_user}@${server_ip_tmp}${RESET}"
+        echo
+        echo -ne "${YELLOW}Ты сохранил/скачал ключ? [yes]: ${RESET}"
         read -r confirm
         if [[ "${confirm,,}" != "yes" && "${confirm,,}" != "y" ]]; then
-            warn "Пожалуйста сохрани ключ перед продолжением!"
-            echo -ne "${YELLOW}Продолжить всё равно? [y/N]: ${RESET}"
+            warn "Ключ сохранён на сервере: ${CONFIG_DIR}/ssh_private_key"
+            warn "Скачай его позже через scp!"
+            echo -ne "${YELLOW}Продолжить? [y/N]: ${RESET}"
             read -r force
             [[ "${force,,}" == "y" ]] || return 1
         fi
@@ -332,22 +352,53 @@ cmd_ssh_hardening() {
 
     cat > /etc/fail2ban/jail.local << EOF
 [DEFAULT]
-bantime  = 3600
-findtime = 600
-maxretry = 3
-backend  = systemd
+# Глобальные настройки
+bantime   = 86400    # Бан 24 часа
+findtime  = 600      # Окно поиска 10 минут
+maxretry  = 3        # Максимум попыток
+backend   = systemd
+banaction = ufw
 
 [sshd]
-enabled  = true
-port     = ${new_ssh_port}
-logpath  = %(sshd_log)s
-maxretry = 3
-bantime  = 86400
+enabled   = true
+port      = ${new_ssh_port}
+logpath   = %(sshd_log)s
+maxretry  = 3
+bantime   = 604800   # Бан 7 дней за брутфорс SSH
+
+[sshd-ddos]
+enabled   = true
+port      = ${new_ssh_port}
+logpath   = %(sshd_log)s
+maxretry  = 10
+findtime  = 60       # 10 попыток за 1 минуту = DDoS бан
+bantime   = 604800
+
+[recidive]
+enabled   = true
+logpath   = /var/log/fail2ban.log
+banaction = ufw
+bantime   = 2592000  # Рецидивисты — бан на 30 дней
+findtime  = 86400
+maxretry  = 3
 EOF
+
+    # Настройка action для UFW
+    cat > /etc/fail2ban/action.d/ufw.conf << 'UEOF'
+[Definition]
+actionstart =
+actionstop  =
+actioncheck =
+actionban   = ufw insert 1 deny from <ip> to any
+actionunban = ufw delete deny from <ip> to any
+UEOF
 
     systemctl enable fail2ban --quiet
     systemctl restart fail2ban
-    ok "Fail2Ban настроен (3 попытки → бан на 24 часа)"
+    ok "Fail2Ban настроен:"
+    ok "  SSH брутфорс: 3 попытки → бан 7 дней"
+    ok "  SSH DDoS: 10 попыток за 1 мин → бан 7 дней"
+    ok "  Рецидивисты: → бан 30 дней"
 
     # ── Перезапуск sshd ───────────────────────────────────────
     systemctl restart sshd
@@ -1139,17 +1190,34 @@ EOF
 
 # ─── UFW ─────────────────────────────────────────────────────
 setup_firewall() {
-    command -v ufw &>/dev/null || { warn "UFW не найден, пропускаю"; return; }
+    command -v ufw &>/dev/null || apt-get install -y -q ufw
     info "Настраиваю UFW..."
+
     # Включаем UFW если не активен
     if ! ufw status | grep -q "Status: active"; then
+        # Дефолтная политика: блокируем всё входящее
+        ufw default deny incoming  >/dev/null 2>&1 || true
+        ufw default allow outgoing >/dev/null 2>&1 || true
         ufw --force enable >/dev/null 2>&1 || true
-        ok "UFW включён"
+        ok "UFW включён (дефолт: блокировать всё входящее)"
     fi
-    ufw allow 80/tcp  comment 'NaiveProxy ACME'  >/dev/null 2>&1 || true
-    ufw allow 443/tcp comment 'NaiveProxy HTTPS' >/dev/null 2>&1 || true
-    ufw allow 443/udp comment 'NaiveProxy HTTP3' >/dev/null 2>&1 || true
+
+    # Базовые порты NaiveProxy
+    ufw allow 80/tcp  comment "NaiveProxy ACME"  >/dev/null 2>&1 || true
+    ufw allow 443/tcp comment "NaiveProxy HTTPS" >/dev/null 2>&1 || true
+    ufw allow 443/udp comment "NaiveProxy HTTP3" >/dev/null 2>&1 || true
+
+    # Лимит подключений — защита от DDoS и сканирования
+    ufw limit 80/tcp  >/dev/null 2>&1 || true
+
+    # Блокируем типичные порты для сканеров
+    for port in 3306 5432 6379 27017 8080 8888 9200; do
+        ufw deny "${port}/tcp" comment "Block scanners" >/dev/null 2>&1 || true
+    done
+
     ok "UFW: открыты 80, 443/tcp, 443/udp"
+    ok "UFW: заблокированы порты БД и типичные цели сканеров"
+    ok "UFW: лимит на 80/tcp для защиты от DDoS"
 }
 
 # ─── BBR ─────────────────────────────────────────────────────
@@ -1227,6 +1295,19 @@ EOF
             echo -e "  👤 ${BOLD}$u${RESET} : naive+https://${u}:${p}@${DOMAIN}:443"
         done < <(get_users)
     fi
+    # QR код для быстрого подключения
+    echo
+    info "QR код для быстрого подключения с телефона:"
+    local uri="naive+https://${first_user}:${first_pass}@${DOMAIN}:443"
+    if command -v qrencode &>/dev/null; then
+        echo
+        qrencode -t ANSIUTF8 "$uri"
+        echo
+    else
+        info "Устанавливаю qrencode для QR кода..."
+        apt-get install -y -q qrencode 2>/dev/null &&         echo && qrencode -t ANSIUTF8 "$uri" && echo ||         warn "qrencode недоступен — установи вручную: apt install qrencode"
+    fi
+    ok "Отсканируй QR в NekoBox / Shadowrocket"
     hr
 }
 
@@ -1905,6 +1986,8 @@ main() {
             sysupdate)     cmd_sysupdate ;;
             cert)        load_config; check_cert "${DOMAIN:-}" ;;
             domains)     load_config; cmd_domains ;;
+            qr)          load_config; print_client_config ;;
+            ssh-key)     cat "${CONFIG_DIR}/ssh_private_key" 2>/dev/null || err "Ключ не найден: ${CONFIG_DIR}/ssh_private_key" ;;
             self-update)  load_config; cmd_self_update ;;
             camouflage)   install_camouflage_page ;;
             version)     echo "NaiveProxy Manager v${VERSION}" ;;
