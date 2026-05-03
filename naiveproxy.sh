@@ -1939,6 +1939,10 @@ cmd_diagnose() {
     fi
 
     # Naive padding в бинарнике
+    if ! command -v strings &>/dev/null; then
+        info "Устанавливаю binutils для проверки padding..."
+        apt-get install -y -q binutils 2>/dev/null || true
+    fi
     if command -v strings &>/dev/null && [[ -f "${CADDY_BIN}" ]]; then
         if strings "${CADDY_BIN}" 2>/dev/null | grep -q "^Padding$"; then
             _ok "Naive padding модуль подтверждён"
