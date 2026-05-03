@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-#   NaiveProxy Manager v4.2.0 — by ivanstudiya-cpu
+#   NaiveProxy Manager v4.2.1 — by ivanstudiya-cpu
 #   Стек: Caddy 2 + klzgrad/forwardproxy@naive
 #   ОС: Ubuntu 20.04 / 22.04 / 24.04
 #   GitHub: https://github.com/ivanstudiya-cpu/naiveproxy
@@ -8,7 +8,7 @@
 
 set -euo pipefail
 
-VERSION="4.2.0"
+VERSION="4.2.1"
 LANG_UI="${NAIVEPROXY_LANG:-ru}"  # ru или en — export NAIVEPROXY_LANG=en
 GITHUB_RAW="https://raw.githubusercontent.com/ivanstudiya-cpu/naiveproxy/main/naiveproxy.sh"
 GITHUB_API="https://api.github.com/repos/ivanstudiya-cpu/naiveproxy/releases/latest"
@@ -20,6 +20,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 BLUE='\033[0;34m'
+GOLD='\033[0;33m'
 BOLD='\033[1m'
 DIM='\033[2m'
 RESET='\033[0m'
@@ -29,6 +30,35 @@ err()  { echo -e "${RED}[✗]${RESET} $*"; }
 info() { echo -e "${CYAN}[i]${RESET} $*"; }
 warn() { echo -e "${YELLOW}[!]${RESET} $*"; }
 hr()   { echo -e "${CYAN}──────────────────────────────────────────${RESET}"; }
+
+# ─── Баннер при первом запуске ────────────────────────────────
+show_banner() {
+    echo -e "${BOLD}${CYAN}"
+    echo '  ███╗   ██╗ █████╗ ██╗██╗   ██╗███████╗'
+    echo '  ████╗  ██║██╔══██╗██║██║   ██║██╔════╝'
+    echo '  ██╔██╗ ██║███████║██║██║   ██║█████╗  '
+    echo '  ██║╚██╗██║██╔══██║██║╚██╗ ██╔╝██╔══╝  '
+    echo '  ██║ ╚████║██║  ██║██║ ╚████╔╝ ███████╗'
+    echo '  ╚═╝  ╚═══╝╚═╝  ╚═╝╚═╝  ╚═══╝  ╚══════╝'
+    echo -e "${RESET}"
+    echo -e "  ${BOLD}${GOLD}██████╗ ██████╗  ██████╗ ██╗  ██╗██╗   ██╗${RESET}"
+    echo -e "  ${BOLD}${GOLD}██╔══██╗██╔══██╗██╔═══██╗╚██╗██╔╝╚██╗ ██╔╝${RESET}"
+    echo -e "  ${BOLD}${GOLD}██████╔╝██████╔╝██║   ██║ ╚███╔╝  ╚████╔╝ ${RESET}"
+    echo -e "  ${BOLD}${GOLD}██╔═══╝ ██╔══██╗██║   ██║ ██╔██╗   ╚██╔╝  ${RESET}"
+    echo -e "  ${BOLD}${GOLD}██║     ██║  ██║╚██████╔╝██╔╝ ██╗   ██║   ${RESET}"
+    echo -e "  ${BOLD}${GOLD}╚═╝     ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ${RESET}"
+    echo
+    echo -e "  ${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+    echo -e "  ${BOLD}  NaiveProxy Manager${RESET} ${DIM}v${VERSION}${RESET}  ${DIM}·${RESET}  ${CYAN}by Иван Юрьевич${RESET}"
+    echo -e "  ${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+    echo
+    echo -e "  ${YELLOW}🔔 Обновления выходят раз в месяц${RESET}"
+    echo -e "  ${CYAN}📱 Telegram:${RESET} https://t.me/+XVSkY6blCTY0ZDU6"
+    echo -e "  ${CYAN}🌐 Сайт:${RESET}     https://ivan-it.net"
+    echo -e "  ${CYAN}💻 GitHub:${RESET}   github.com/ivanstudiya-cpu/naiveproxy"
+    echo -e "  ${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+    echo
+}
 
 # ─── Пути ────────────────────────────────────────────────────
 CADDY_BIN="/usr/local/bin/caddy"
@@ -3316,7 +3346,12 @@ main() {
             bot-install) load_config; install_bot_service ;;
             self-update)  load_config; cmd_self_update ;;
             camouflage)   install_camouflage_page ;;
-            version)     echo "NaiveProxy Manager v${VERSION}" ;;
+            version)
+                echo "NaiveProxy Manager v${VERSION}"
+                echo "Telegram: https://t.me/+XVSkY6blCTY0ZDU6"
+                echo "Сайт:     https://ivan-it.net"
+                echo "GitHub:   github.com/ivanstudiya-cpu/naiveproxy"
+                ;;
             *) err "Неизвестная команда: $1"
                echo "Доступные: install status config restart update remove logs monitor users tg-stats ssh-hardening sysupdate cert domains self-update version camouflage"
                exit 1 ;;
