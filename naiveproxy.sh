@@ -2362,11 +2362,17 @@ tg_handle_command() {
     # Парсим команду и аргументы
     local cmd args
     cmd=$(echo "${text}" | awk '{print $1}' | tr '[:upper:]' '[:lower:]' | tr -d '\r\n[:cntrl:]')
-    args=$(echo "${text}" | cut -d' ' -f2-)
-    # Убираем команду из args если args == cmd (нет аргументов)
-    [[ "${args}" == "${text}" ]] && args=""
-    # Убираем потенциально опасные символы из args
-    args=$(echo "${args}" | tr -d '`$(){};<>&|\\')
+    # args = всё после первого пробела
+    if [[ "${text}" == *" "* ]]; then
+        args="${text#* }"
+        # Trim leading/trailing whitespace
+        args="${args#"${args%%[![:space:]]*}"}"
+        args="${args%"${args##*[![:space:]]}"}"
+    else
+        args=""
+    fi
+    # Убираем потенциально опасные символы из args (но оставляем безопасные)
+    args=$(echo "${args}" | tr -d '`$();<>&|\\')
 
     case "${cmd}" in
 
@@ -2546,23 +2552,29 @@ ${user_list}"
             new_pass=$(echo "${args}" | awk '{print $2}')
 
             if [[ -z "${new_user}" ]]; then
-                tg_reply "${chat_id}" "❌ Использование: /adduser логин пароль"
+                tg_reply "${chat_id}" "❌ Использование: /adduser логин пароль
+Пример: /adduser alice MyPass123"
                 return
             fi
 
+            # Валидация логина
+            if ! [[ "${new_user}" =~ ^[a-zA-Z0-9_-]{2,32}$ ]]; then
+                tg_reply "${chat_id}" "❌ Неверный логин <code>${new_user}</code>
+Только буквы, цифры, _, - (2-32 символа)"
+                return
+            fi
+
+            # Валидация пароля (если указан)
             if [[ -z "${new_pass}" ]]; then
+                # Авто-генерация
                 new_pass=$(openssl rand -base64 16 | tr -dc 'a-zA-Z0-9' | head -c 16)
+                tg_reply "${chat_id}" "🔑 Пароль не указан, сгенерирован автоматически"
             elif [[ "${new_pass}" == *":"* ]]; then
                 tg_reply "${chat_id}" "❌ Пароль не может содержать ':'"
                 return
             elif [[ ${#new_pass} -lt 8 ]]; then
-                tg_reply "${chat_id}" "❌ Пароль слишком короткий (минимум 8 символов)"
-                return
-            fi
-
-            # Валидация
-            if ! [[ "${new_user}" =~ ^[a-zA-Z0-9_-]{2,32}$ ]]; then
-                tg_reply "${chat_id}" "❌ Неверный логин. Только буквы, цифры, _, -"
+                tg_reply "${chat_id}" "❌ Пароль слишком короткий (минимум 8 символов)
+Текущий: ${#new_pass} символов"
                 return
             fi
 
@@ -2571,18 +2583,26 @@ ${user_list}"
                 return
             fi
 
-            printf '%s:%s
-' "${new_user}" "${new_pass}" >> "${USERS_FILE}"
-            write_caddyfile
-            systemctl reload caddy 2>/dev/null || systemctl restart caddy
+            # Создаём папку и файл если нет
+            mkdir -p "$(dirname "${USERS_FILE}")"
+            touch "${USERS_FILE}"
+            chmod 600 "${USERS_FILE}"
 
-            local uri="naive+https://${new_user}:${new_pass}@${DOMAIN}:443"
-            tg_reply "${chat_id}" "✅ <b>Пользователь добавлен</b>
+            printf '%s:%s\n' "${new_user}" "${new_pass}" >> "${USERS_FILE}"
+
+            if write_caddyfile 2>/dev/null; then
+                systemctl reload caddy 2>/dev/null || systemctl restart caddy 2>/dev/null
+                local uri="naive+https://${new_user}:${new_pass}@${DOMAIN}:443"
+                tg_reply "${chat_id}" "✅ <b>Пользователь добавлен</b>
 👤 Логин: <code>${new_user}</code>
 🔑 Пароль: <code>${new_pass}</code>
-🌐 URI: <code>${uri}</code>
+🌐 URI:
+<code>${uri}</code>
 
 Используй /qr ${new_user} для QR кода"
+            else
+                tg_reply "${chat_id}" "⚠️ Пользователь добавлен но Caddyfile не обновлён"
+            fi
             ;;
 
         /deluser)
