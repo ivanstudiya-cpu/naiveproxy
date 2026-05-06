@@ -2336,6 +2336,9 @@ tg_handle_command() {
     local from_id="$2"
     local text="$3"
 
+    # Отключаем строгий режим внутри обработчика — иначе любая ошибка ломает бот
+    set +e
+
     # Проверка прав
     if ! tg_is_admin "${from_id}"; then
         tg_reply "${chat_id}" "⛔ <b>Доступ запрещён</b>
@@ -2346,6 +2349,10 @@ tg_handle_command() {
 
     load_config 2>/dev/null || true
 
+    # Очищаем text от \r \n и невидимых символов
+    text="${text//$'\r'/}"
+    text="${text//$'\n'/}"
+
     # Лимит длины команды — защита от flood/injection
     if [[ ${#text} -gt 256 ]]; then
         tg_reply "${chat_id}" "❌ Команда слишком длинная"
@@ -2354,8 +2361,10 @@ tg_handle_command() {
 
     # Парсим команду и аргументы
     local cmd args
-    cmd=$(echo "${text}" | awk '{print $1}' | tr '[:upper:]' '[:lower:]')
+    cmd=$(echo "${text}" | awk '{print $1}' | tr '[:upper:]' '[:lower:]' | tr -d '\r\n[:cntrl:]')
     args=$(echo "${text}" | cut -d' ' -f2-)
+    # Убираем команду из args если args == cmd (нет аргументов)
+    [[ "${args}" == "${text}" ]] && args=""
     # Убираем потенциально опасные символы из args
     args=$(echo "${args}" | tr -d '`$(){};<>&|\\')
 
