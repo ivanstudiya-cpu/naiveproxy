@@ -8,7 +8,7 @@
 
 set -euo pipefail
 
-VERSION="4.2.1"
+VERSION="4.2.2"
 LANG_UI="${NAIVEPROXY_LANG:-ru}"  # ru или en — export NAIVEPROXY_LANG=en
 GITHUB_RAW="https://raw.githubusercontent.com/ivanstudiya-cpu/naiveproxy/main/naiveproxy.sh"
 GITHUB_API="https://api.github.com/repos/ivanstudiya-cpu/naiveproxy/releases/latest"
@@ -337,9 +337,43 @@ cmd_ssh_hardening() {
     fi
 
     # Меняем настройки
-    sed -i "s/^#*Port .*/Port ${new_ssh_port}/" "$sshd_config"
-    sed -i "s/^#*PermitRootLogin .*/PermitRootLogin ${disable_root}/" "$sshd_config"
-    sed -i "s/^#*PasswordAuthentication .*/PasswordAuthentication ${disable_pass}/" "$sshd_config"
+    # Проверяем что строка Port вообще есть
+    if grep -qE "^#?Port " "$sshd_config"; then
+        sed -i "s/^#*Port .*/Port ${new_ssh_port}/" "$sshd_config"
+    else
+        echo "Port ${new_ssh_port}" >> "$sshd_config"
+    fi
+    # На Ubuntu 22.04+ конфиг может быть в /etc/ssh/sshd_config.d/*.conf
+    for cfg in /etc/ssh/sshd_config.d/*.conf; do
+        [[ ! -f "$cfg" ]] && continue
+        if grep -qE "^#?Port " "$cfg"; then
+            sed -i "s/^#*Port .*/Port ${new_ssh_port}/" "$cfg"
+        fi
+    done
+    # Ubuntu 22.04+ использует ssh.socket — нужно отключить
+    if systemctl is-enabled ssh.socket &>/dev/null; then
+        info "Отключаю ssh.socket (Ubuntu 22.04+ override)..."
+        systemctl disable ssh.socket --quiet 2>/dev/null || true
+        systemctl stop ssh.socket 2>/dev/null || true
+    fi
+    # PermitRootLogin
+    if grep -qE "^#?PermitRootLogin " "$sshd_config"; then
+        sed -i "s/^#*PermitRootLogin .*/PermitRootLogin ${disable_root}/" "$sshd_config"
+    else
+        echo "PermitRootLogin ${disable_root}" >> "$sshd_config"
+    fi
+    # PasswordAuthentication
+    if grep -qE "^#?PasswordAuthentication " "$sshd_config"; then
+        sed -i "s/^#*PasswordAuthentication .*/PasswordAuthentication ${disable_pass}/" "$sshd_config"
+    else
+        echo "PasswordAuthentication ${disable_pass}" >> "$sshd_config"
+    fi
+    # Также в conf.d файлах (Ubuntu 22.04+)
+    for cfg in /etc/ssh/sshd_config.d/*.conf; do
+        [[ ! -f "$cfg" ]] && continue
+        sed -i "s/^#*PermitRootLogin .*/PermitRootLogin ${disable_root}/" "$cfg" 2>/dev/null || true
+        sed -i "s/^#*PasswordAuthentication .*/PasswordAuthentication ${disable_pass}/" "$cfg" 2>/dev/null || true
+    done
     sed -i "s/^#*PubkeyAuthentication .*/PubkeyAuthentication yes/" "$sshd_config"
     sed -i "s/^#*AuthorizedKeysFile .*/AuthorizedKeysFile .ssh\/authorized_keys/" "$sshd_config"
     sed -i "s/^#*X11Forwarding .*/X11Forwarding no/" "$sshd_config"
@@ -381,6 +415,7 @@ cmd_ssh_hardening() {
     ok "Новый SSH порт ${new_ssh_port} открыт в UFW"
 
     # Fail2Ban
+    apt-get update -qq 2>/dev/null || true
     apt-get install -y -q fail2ban
 
     cat > /etc/fail2ban/jail.local << EOF
@@ -390,7 +425,7 @@ bantime   = 86400    # Бан 24 часа
 findtime  = 600      # Окно поиска 10 минут
 maxretry  = 3        # Максимум попыток
 backend   = systemd
-banaction = ufw
+banaction = iptables-multiport
 
 [sshd]
 enabled   = true
@@ -1245,13 +1280,19 @@ PrivateTmp=true
 ProtectSystem=full
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 
+# Авто-перезапуск при сбое
+Restart=on-failure
+RestartSec=5s
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
 [Install]
 WantedBy=multi-user.target
 EOF
 
     systemctl daemon-reload
     systemctl enable caddy --quiet
-    ok "systemd сервис настроен"
+    ok "systemd сервис Caddy настроен (Restart=on-failure)"
 }
 
 # ─── UFW ─────────────────────────────────────────────────────
@@ -1274,7 +1315,7 @@ setup_firewall() {
     ufw allow 443/udp comment "NaiveProxy HTTP3" >/dev/null 2>&1 || true
 
     # Лимит подключений — защита от DDoS и сканирования
-    ufw limit 80/tcp  >/dev/null 2>&1 || true
+    ufw allow 80/tcp  >/dev/null 2>&1 || true
 
     # Блокируем типичные порты для сканеров
     for port in 3306 5432 6379 27017 8080 8888 9200; do
@@ -1465,6 +1506,16 @@ cmd_domains() {
                 tg_send "🌐 <b>Добавлен домен</b>: <code>${new_dom}</code>"
                 ;;
             2)
+                # Защита: считаем сколько доменов
+                local _dom_total
+                _dom_total=$(echo "$current_domains" | tr ',' '\n' | grep -c '\S' || echo 0)
+                if [[ ${_dom_total} -le 1 ]]; then
+                    err "❌ Нельзя удалить последний домен!"
+                    err "Сервер перестанет работать без домена."
+                    err "Сначала добавь новый домен (вариант 1), потом удаляй старый."
+                    echo -ne "${YELLOW}Enter для продолжения...${RESET}"; read -r
+                    continue
+                fi
                 echo -ne "${CYAN}Номер домена для удаления: ${RESET}"
                 read -r del_idx
                 local new_domains=""
@@ -2573,7 +2624,7 @@ ${user_list}"
             # Валидация пароля (если указан)
             if [[ -z "${new_pass}" ]]; then
                 # Авто-генерация
-                new_pass=$(openssl rand -base64 16 | tr -dc 'a-zA-Z0-9' | head -c 16)
+                new_pass=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9_-' | head -c 20)
                 tg_reply "${chat_id}" "🔑 Пароль не указан, сгенерирован автоматически"
             elif [[ "${new_pass}" == *":"* ]]; then
                 tg_reply "${chat_id}" "❌ Пароль не может содержать ':'"

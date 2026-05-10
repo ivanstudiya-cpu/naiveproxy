@@ -21,7 +21,7 @@ Caddy 2 · NaiveProxy · Telegram Bot · DNS Ad Blocking · Diagnostics · SSH H
 
 ---
 
-[![Version](https://img.shields.io/badge/version-4.2.1-D4A017?style=for-the-badge&logo=github&logoColor=white)](https://github.com/ivanstudiya-cpu/naiveproxy/releases)
+[![Version](https://img.shields.io/badge/version-4.2.2-D4A017?style=for-the-badge&logo=github&logoColor=white)](https://github.com/ivanstudiya-cpu/naiveproxy/releases)
 [![ShellCheck](https://img.shields.io/badge/ShellCheck-passing-3FB950?style=for-the-badge&logo=gnu-bash&logoColor=white)](https://www.shellcheck.net)
 [![Bash](https://img.shields.io/badge/Bash-5.0+-4EAA25?style=for-the-badge&logo=gnubash&logoColor=white)](https://www.gnu.org/software/bash/)
 [![Ubuntu](https://img.shields.io/badge/Ubuntu-20.04%2B-E95420?style=for-the-badge&logo=ubuntu&logoColor=white)](https://ubuntu.com)
@@ -515,7 +515,39 @@ systemctl restart naiveproxy-bot
 ## 📜 Changelog
 
 <details>
-<summary><b>v4.2.0</b> — DNS Ad Blocker ← CURRENT</summary>
+<summary><b>v4.2.2</b> — Security Audit ← CURRENT</summary>
+
+**🔴 Critical fixes:**
+- 🔒 SSH port now changes correctly on Ubuntu 22.04+ (`sshd_config.d/` support)
+- 🔒 Auto-disable `ssh.socket` (Ubuntu 22.04+ override)
+- 🛡️ Protection against deleting the last domain (previously broke the server)
+- 📦 `apt update` before Fail2Ban install (fixes install on clean server)
+- 🔧 `PasswordAuthentication` and `PermitRootLogin` — added if missing in config
+
+**🟡 Security improvements:**
+- ⚡ Fail2Ban: `banaction = iptables-multiport` (faster than UFW for thousands of bans)
+- 🌐 UFW: `allow 80/tcp` instead of `limit` (fixes Let's Encrypt ACME challenges)
+- 🔑 Password generation: `[a-zA-Z0-9_-]`, 20 chars (was 16)
+- ♻️ Caddy `Restart=on-failure` + `RestartSec=5s` (auto-recovery on failure)
+
+**🐛 Bot fixes:**
+- ✅ `/qr` now works — fixed curl `-F` + `--data-urlencode` conflict
+- ✅ `/adduser` now properly validates login and password
+- ✅ Commands stripped of `\r\n` (Telegram added invisible characters)
+- ✅ `set +e` inside handler — single command error no longer breaks bot
+- ✅ Auto-install `qrencode` if not present
+- ✅ Auto-install `binutils` for naive padding check
+
+**🔍 Diagnostics:**
+- 🐛 Fixed counters (`((pass++))` → `pass=$((pass+1))` — `set -e` broke diagnostics)
+- 🐛 Fixed ALPN check (added `-servername` for SNI)
+- 🐛 Fixed error count in journal (`grep -c | echo "0"` returned two lines)
+- 🐛 Improved naive padding check (multiple criteria, not just `^Padding$`)
+
+</details>
+
+<details>
+<summary><b>v4.2.0</b> — DNS Ad Blocker</summary>
 
 - ✨ DNS ad blocking via unbound (~1.5M domains)
 - ✨ DNS-over-TLS (Cloudflare + Google)
